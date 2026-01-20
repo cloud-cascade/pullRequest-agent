@@ -7,6 +7,10 @@ azure-identity
 
 # Azure Monitor OpenTelemetry (for observability)
 azure-monitor-opentelemetry
+azure-monitor-opentelemetry-exporter
+
+# OpenTelemetry OTLP exporters (for local Aspire Dashboard)
+opentelemetry-exporter-otlp-proto-grpc
 
 # GitHub API
 PyGithub

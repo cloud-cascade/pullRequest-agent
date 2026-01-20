@@ -1,8 +1,9 @@
-"""Observability configuration for PR Agent using Azure Monitor and Agent Framework.
+"""OpenTelemetry observability configuration for PR Agent.
 
-This module provides centralized observability setup following the Microsoft
-Agent Framework documentation:
-https://learn.microsoft.com/en-us/agent-framework/user-guide/observability
+Supports three backends:
+- disabled: No tracing
+- local: Sends traces to local Aspire dashboard via OTLP gRPC
+- appinsights: Sends traces to Azure Application Insights
 """
 
 import os
@@ -12,7 +13,55 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
-def get_appinsights_connection_string() -> Optional[str]:
+def configure_observability(
+    backend: Optional[str] = None,
+    appinsights_connection_string: Optional[str] = None,
+    otlp_endpoint: str = "http://localhost:4317",
+    enable_sensitive_data: Optional[bool] = None,
+) -> bool:
+    """Configure OpenTelemetry observability based on backend selection.
+
+    Args:
+        backend: Tracing backend - "disabled", "local", or "appinsights".
+                 If not provided, reads from TRACING_BACKEND env var.
+        appinsights_connection_string: Azure App Insights connection string.
+                                       If not provided, reads from environment.
+        otlp_endpoint: OTLP endpoint for local backend (default: http://localhost:4317).
+                       Can also be set via OTLP_ENDPOINT env var.
+        enable_sensitive_data: Whether to log prompts/responses in traces.
+                               If not provided, reads from ENABLE_SENSITIVE_DATA env var.
+
+    Returns:
+        True if observability was successfully configured, False otherwise.
+    """
+    # Resolve backend from environment if not provided
+    if backend is None:
+        backend = os.getenv("TRACING_BACKEND", "disabled").lower()
+
+    # Resolve sensitive data setting from environment if not provided
+    if enable_sensitive_data is None:
+        enable_sensitive_data = os.getenv("ENABLE_SENSITIVE_DATA", "false").lower() == "true"
+
+    if backend == "disabled":
+        logger.info("Observability is disabled")
+        print("   Observability: Disabled")
+        return False
+
+    if backend == "local":
+        # Get OTLP endpoint from environment if not explicitly provided
+        endpoint = os.getenv("OTLP_ENDPOINT", otlp_endpoint)
+        return _configure_local_observability(endpoint, enable_sensitive_data)
+    elif backend == "appinsights":
+        # Get connection string from environment if not explicitly provided
+        conn_str = appinsights_connection_string or _get_appinsights_connection_string()
+        return _configure_appinsights_observability(conn_str, enable_sensitive_data)
+    else:
+        logger.warning(f"Unknown tracing backend: {backend}, observability disabled")
+        print(f"   Warning: Unknown tracing backend '{backend}', observability disabled")
+        return False
+
+
+def _get_appinsights_connection_string() -> Optional[str]:
     """Get Application Insights connection string from environment.
 
     Checks environment variables in order:
@@ -23,99 +72,125 @@ def get_appinsights_connection_string() -> Optional[str]:
     Returns:
         Application Insights connection string or None if not found
     """
-    conn_str = (
+    return (
         os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING") or
         os.getenv("APPLICATION_INSIGHTS_CONNECTION_STRING") or
         os.getenv("AZURE_MONITOR_CONNECTION_STRING")
     )
 
-    if conn_str:
-        logger.info("Loaded App Insights connection string from environment")
 
-    return conn_str
-
-
-def setup_pr_agent_observability(
-    connection_string: Optional[str] = None,
-    enable_live_metrics: bool = True,
-    enable_sensitive_data: bool = False,
-    otlp_endpoint: Optional[str] = None,
-) -> bool:
-    """Configure observability for PR Agent using Agent Framework's built-in setup.
-
-    This uses the agent_framework.observability.setup_observability() function which
-    handles both Azure Application Insights and OTLP endpoints (e.g., Aspire Dashboard).
+def _configure_local_observability(otlp_endpoint: str, enable_sensitive_data: bool) -> bool:
+    """Configure observability for local Aspire dashboard via OTLP gRPC.
 
     Args:
-        connection_string: Azure Application Insights connection string.
-                          If not provided, checks environment variables.
-        enable_live_metrics: Enable live metrics streaming (currently not used by agent_framework).
-                            Default is True for compatibility.
-        enable_sensitive_data: Include sensitive data (prompts/responses) in telemetry.
-                              Default is False for security. Only enable in dev/test.
-        otlp_endpoint: OTLP endpoint for local tracing (e.g., "http://localhost:4317" for Aspire Dashboard).
-                      If not provided, checks OTLP_ENDPOINT env var.
+        otlp_endpoint: OTLP gRPC endpoint (e.g., http://localhost:4317)
+        enable_sensitive_data: Whether to include prompts/responses in traces
 
     Returns:
-        True if observability was successfully configured, False otherwise.
-
-    Example:
-        >>> setup_pr_agent_observability(
-        ...     connection_string="InstrumentationKey=...",
-        ...     enable_live_metrics=True,
-        ...     enable_sensitive_data=False,
-        ... )
+        True if successfully configured, False otherwise.
     """
-    # Get connection string
-    conn_str = connection_string or get_appinsights_connection_string()
-    
-    # Get OTLP endpoint from parameter or environment
-    otlp = otlp_endpoint or os.getenv("OTLP_ENDPOINT")
-
-    # Check if we have at least one observability endpoint
-    if not conn_str and not otlp:
-        logger.info("No observability endpoints configured (no connection string or OTLP endpoint)")
-        print("   No observability endpoints configured")
+    try:
+        from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
+        from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+    except ImportError as e:
+        logger.error(f"OTLP exporters not available: {e}")
+        print(f"   Error: OTLP exporters not installed. Run: pip install opentelemetry-exporter-otlp-proto-grpc")
         return False
 
     try:
-        # Import Agent Framework's setup function
-        from agent_framework.observability import setup_observability
+        from agent_framework.observability import configure_otel_providers
     except ImportError:
-        logger.warning("agent_framework.observability not available. Skipping observability setup.")
-        print("   Warning: agent_framework.observability not available")
+        logger.error("agent_framework.observability not available")
+        print("   Error: agent_framework.observability not available")
         return False
 
     try:
-        # Use Agent Framework's built-in observability setup
-        # This handles both Azure Monitor and OTLP exporters internally
-        setup_observability(
-            applicationinsights_connection_string=conn_str,
-            otlp_endpoint=otlp,
+        exporters = [
+            OTLPSpanExporter(endpoint=otlp_endpoint),
+            OTLPLogExporter(endpoint=otlp_endpoint),
+            OTLPMetricExporter(endpoint=otlp_endpoint),
+        ]
+        configure_otel_providers(
+            exporters=exporters,
             enable_sensitive_data=enable_sensitive_data,
         )
 
-        print("\n   Observability Configured Successfully")
-        
-        if conn_str:
-            print(f"   - Azure Application Insights: Connected")
-            # Note: enable_live_metrics is not directly supported by agent_framework.setup_observability
-            # but the connection will still provide telemetry data
-        
-        if otlp:
-            print(f"   - OTLP Endpoint: {otlp}")
-            print(f"   - Aspire Dashboard: Available at http://localhost:18888 (if running)")
-        
-        print(f"   - Sensitive Data: {'Enabled' if enable_sensitive_data else 'Disabled (Secure)'}")
+        logger.info(f"Observability configured for local Aspire dashboard at {otlp_endpoint}")
+        print(f"\n   Observability Configured Successfully")
+        print(f"   - Backend: Local OTLP")
+        print(f"   - Endpoint: {otlp_endpoint}")
+        print(f"   - Aspire Dashboard: http://localhost:18888 (if running)")
+        print(f"   - Sensitive Data: {'Enabled' if enable_sensitive_data else 'Disabled'}")
         print(f"   - Service Name: {os.getenv('OTEL_SERVICE_NAME', 'pr-agent')}")
-
         return True
 
     except Exception as e:
-        logger.error(f"Error configuring observability: {e}")
-        print(f"   Error configuring observability: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Error configuring local observability: {e}")
+        print(f"   Error configuring local observability: {e}")
+        return False
+
+
+def _configure_appinsights_observability(
+    connection_string: Optional[str],
+    enable_sensitive_data: bool,
+) -> bool:
+    """Configure observability for Azure Application Insights using exporters directly.
+
+    Uses Azure Monitor exporters directly instead of configure_azure_monitor()
+    to avoid heavy auto-instrumentation that causes startup delays.
+
+    Args:
+        connection_string: Azure Application Insights connection string
+        enable_sensitive_data: Whether to include prompts/responses in traces
+
+    Returns:
+        True if successfully configured, False otherwise.
+    """
+    if not connection_string:
+        logger.warning("App Insights connection string not provided, observability disabled")
+        print("   Warning: App Insights connection string not provided, observability disabled")
+        return False
+
+    try:
+        from azure.monitor.opentelemetry.exporter import (
+            AzureMonitorLogExporter,
+            AzureMonitorMetricExporter,
+            AzureMonitorTraceExporter,
+        )
+    except ImportError as e:
+        logger.error(f"Azure Monitor exporters not available: {e}")
+        print(f"   Error: Azure Monitor exporters not installed. Run: pip install azure-monitor-opentelemetry-exporter")
+        return False
+
+    try:
+        from agent_framework.observability import configure_otel_providers
+    except ImportError:
+        logger.error("agent_framework.observability not available")
+        print("   Error: agent_framework.observability not available")
+        return False
+
+    try:
+        exporters = [
+            AzureMonitorTraceExporter(connection_string=connection_string),
+            AzureMonitorLogExporter(connection_string=connection_string),
+            AzureMonitorMetricExporter(connection_string=connection_string),
+        ]
+        configure_otel_providers(
+            exporters=exporters,
+            enable_sensitive_data=enable_sensitive_data,
+        )
+
+        logger.info("Observability configured for Azure Application Insights")
+        print(f"\n   Observability Configured Successfully")
+        print(f"   - Backend: Azure Application Insights")
+        print(f"   - Sensitive Data: {'Enabled' if enable_sensitive_data else 'Disabled'}")
+        print(f"   - Service Name: {os.getenv('OTEL_SERVICE_NAME', 'pr-agent')}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error configuring App Insights observability: {e}")
+        print(f"   Error configuring App Insights observability: {e}")
         return False
 
 
