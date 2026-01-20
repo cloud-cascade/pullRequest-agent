@@ -1,0 +1,18 @@
+[project]
+name = "pullrequest-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "agent-framework>=1.0.0b251120",
+    "agent-framework-devui>=1.0.0b260116",
+    "azure-identity>=1.25.1",
+    "azure-monitor-opentelemetry>=1.8.2",
+    "pydantic>=2.12.5",
+    "pygithub>=2.8.1",
+    "python-dotenv>=1.2.1",
+    "pyyaml>=6.0.3",
+    "regex>=2026.1.15",
+    "requests>=2.32.5",
+]
