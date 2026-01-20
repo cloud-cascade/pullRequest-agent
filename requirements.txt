@@ -1,0 +1,21 @@
+# Microsoft Agent Framework
+agent-framework
+agent-framework-devui
+
+# Azure SDKs
+azure-identity
+
+# Azure Monitor OpenTelemetry (for observability)
+azure-monitor-opentelemetry
+
+# GitHub API
+PyGithub
+requests
+
+# Utilities
+python-dotenv
+pyyaml
+pydantic
+
+# Parsing and analysis
+regex
