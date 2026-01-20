@@ -8,7 +8,12 @@ on:
       - develop
       - 'release/**'
       - 'feature/**'
-
+  push:
+    branches:
+      - main
+      - develop
+      - 'release/**'
+      - 'feature/**'
 permissions:
   id-token: write
   contents: read
