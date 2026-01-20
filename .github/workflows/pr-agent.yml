@@ -8,12 +8,6 @@ on:
       - develop
       - 'release/**'
       - 'feature/**'
-  push:
-    branches:
-      - main
-      - develop
-      - 'release/**'
-      - 'feature/**'
 permissions:
   id-token: write
   contents: read
@@ -40,7 +34,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -r scripts/requirements.txt
+          pip install -r requirements.txt
 
       - name: Run PR Agent
         env:
@@ -53,14 +47,15 @@ jobs:
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
           # Deployment name - supports both variable names
           AZURE_OPENAI_CHAT_DEPLOYMENT_NAME: ${{ secrets.AZURE_OPENAI_CHAT_DEPLOYMENT_NAME || secrets.AZURE_AI_MODEL_DEPLOYMENT_NAME }}
+          AZURE_OPENAI_API_VERSION: ${{ secrets.AZURE_OPENAI_API_VERSION || '2024-02-15-preview' }}
         run: |
-          # Run the PR agent from the scripts folder
-          python scripts/pr-agent.py
+          # Run the PR agent from the root directory
+          python pr-agent.py
 
       - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: pr-agent-logs
-          path: scripts/*.log
+          path: "*.log"
           retention-days: 7
