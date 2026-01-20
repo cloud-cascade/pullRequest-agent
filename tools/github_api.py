@@ -89,11 +89,15 @@ def get_pr_diff(repo: str, pr_number: int, github_token: str) -> List[Dict]:
         return result
 
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching PR diff: {e}")
+        error_msg = f"Error fetching PR diff: {e}"
+        print(error_msg)
         if hasattr(e, 'response') and e.response is not None:
             print(f"Response status: {e.response.status_code}")
             print(f"Response body: {e.response.text}")
-        sys.exit(1)
+            print(f"Request URL: {url}")
+            print(f"Request headers: {headers}")
+        # Don't exit in GitHub Actions - return empty result instead
+        return []
 
 
 def post_pr_comment(repo: str, pr_number: int, comment: str, github_token: str) -> bool:
@@ -162,25 +166,48 @@ def get_pr_diff_tool(
         repo = repository or os.getenv("GITHUB_REPOSITORY", "")
         pr_num_str = str(pr_number) if pr_number else os.getenv("PR_NUMBER", "")
         token = github_token or os.getenv("GITHUB_TOKEN", "")
-        
+
+        # Debug logging
+        print(f"[get_pr_diff_tool] Repository: {repo}")
+        print(f"[get_pr_diff_tool] PR Number: {pr_num_str}")
+        print(f"[get_pr_diff_tool] Token present: {bool(token)}, length: {len(token) if token else 0}")
+
         # Validate required parameters
         if not repo:
-            return json.dumps({
+            error_msg = {
                 "error": "Repository parameter is required. Either pass 'repository' parameter or set GITHUB_REPOSITORY environment variable.",
-                "files": []
-            })
-        
+                "files": [],
+                "debug": {
+                    "repo_param": repository,
+                    "repo_env": os.getenv("GITHUB_REPOSITORY", "NOT_SET")
+                }
+            }
+            print(f"[get_pr_diff_tool] ERROR: {error_msg}")
+            return json.dumps(error_msg)
+
         if not pr_num_str:
-            return json.dumps({
+            error_msg = {
                 "error": "PR number parameter is required. Either pass 'pr_number' parameter or set PR_NUMBER environment variable.",
-                "files": []
-            })
-        
+                "files": [],
+                "debug": {
+                    "pr_number_param": pr_number,
+                    "pr_number_env": os.getenv("PR_NUMBER", "NOT_SET")
+                }
+            }
+            print(f"[get_pr_diff_tool] ERROR: {error_msg}")
+            return json.dumps(error_msg)
+
         if not token:
-            return json.dumps({
+            error_msg = {
                 "error": "GitHub token parameter is required. Either pass 'github_token' parameter or set GITHUB_TOKEN environment variable.",
-                "files": []
-            })
+                "files": [],
+                "debug": {
+                    "token_param": bool(github_token),
+                    "token_env": "SET" if os.getenv("GITHUB_TOKEN") else "NOT_SET"
+                }
+            }
+            print(f"[get_pr_diff_tool] ERROR: {error_msg}")
+            return json.dumps(error_msg)
         
         # Convert PR number to int
         try:
@@ -192,7 +219,9 @@ def get_pr_diff_tool(
             })
         
         # Call the underlying function
+        print(f"[get_pr_diff_tool] Calling get_pr_diff with repo={repo}, pr_num={pr_num}")
         files = get_pr_diff(repo, pr_num, token)
+        print(f"[get_pr_diff_tool] Received {len(files)} files from get_pr_diff")
 
         # Return as JSON string
         result = {
@@ -205,10 +234,12 @@ def get_pr_diff_tool(
         # Try to encode as JSON with special character handling
         try:
             # Use ensure_ascii=False to handle Unicode and special characters properly
-            return json.dumps(result, indent=2, ensure_ascii=False)
+            json_result = json.dumps(result, indent=2, ensure_ascii=False)
+            print(f"[get_pr_diff_tool] Successfully encoded {len(files)} files to JSON")
+            return json_result
         except (TypeError, ValueError) as e:
             # If JSON encoding fails, return simplified version without patches
-            print(f"Warning: JSON encoding failed, returning simplified response: {e}")
+            print(f"[get_pr_diff_tool] Warning: JSON encoding failed, returning simplified response: {e}")
             simplified = {
                 "pr_number": pr_num,
                 "repository": repo,
@@ -229,8 +260,17 @@ def get_pr_diff_tool(
             return json.dumps(simplified, indent=2)
         
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"[get_pr_diff_tool] Exception occurred: {error_details}")
         return json.dumps({
             "error": f"Failed to fetch PR diff: {str(e)}",
-            "files": []
+            "error_type": type(e).__name__,
+            "files": [],
+            "debug": {
+                "repo": repo if 'repo' in locals() else "NOT_SET",
+                "pr_num": pr_num_str if 'pr_num_str' in locals() else "NOT_SET",
+                "token_present": bool(token) if 'token' in locals() else False
+            }
         })
 

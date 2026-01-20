@@ -36,9 +36,18 @@ jobs:
         run: |
           pip install -r requirements.txt
 
+      - name: Debug Environment
+        run: |
+          echo "PR Number: ${{ github.event.pull_request.number }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "Event Path: ${{ github.event_path }}"
+          echo "Token length: ${#GITHUB_TOKEN}"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
       - name: Run PR Agent
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_EVENT_PATH: ${{ github.event_path }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
