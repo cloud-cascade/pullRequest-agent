@@ -5,10 +5,12 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agent-framework>=1.0.0b251120",
+    "agent-framework>=1.0.0b260116",
     "agent-framework-devui>=1.0.0b260116",
-    "azure-identity>=1.25.1",
-    "azure-monitor-opentelemetry>=1.8.2",
+    "azure-identity>=1.26.0b1",
+    "azure-monitor-opentelemetry>=1.8.4",
+    "azure-monitor-opentelemetry-exporter>=1.0.0b46",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.39.0",
     "pydantic>=2.12.5",
     "pygithub>=2.8.1",
     "python-dotenv>=1.2.1",
@@ -16,3 +18,5 @@ dependencies = [
     "regex>=2026.1.15",
     "requests>=2.32.5",
 ]
+[tool.uv]
+prerelease = "allow"
