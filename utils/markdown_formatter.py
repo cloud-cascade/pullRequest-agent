@@ -1,17 +1,20 @@
 """Markdown formatter for PR comments - supports multiple languages."""
 
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 
-def generate_file_description(file_info: Dict) -> str:
+def generate_file_description(file_info: Dict) -> Tuple[str, str, List[str]]:
     """Generate a human-readable description of what a file does.
     
     Args:
         file_info: Dictionary with file analysis data
         
     Returns:
-        A description string explaining the file's purpose
+        A tuple of (status_label, description, details) where:
+        - status_label: Short label like "New file", "Modified", etc.
+        - description: A description string explaining the file's purpose
+        - details: List of additional detail strings
     """
     filename = file_info.get('filename', '')
     status = file_info.get('status', 'modified')
@@ -362,12 +365,12 @@ def format_executive_summary(analysis_result: Dict, security_result: Dict) -> st
         project_type = "PR Analysis Agent"
         
         # Check for Microsoft Agent Framework
-        has_maf = any('agent_framework' in f.get('patch', '').lower() if f.get('patch') else False for f in files) or \
+        has_maf = any('agent_framework' in (f.get('patch', '') or '').lower() for f in files) or \
                   any('agentframework' in fn or 'agent_framework' in fn for fn in all_filenames)
         
         # Check for Azure OpenAI
-        has_azure_openai = any('azure' in fn and 'openai' in f.get('patch', '').lower() if f.get('patch') else False for f in files) or \
-                          any('azureopenai' in all_filenames_str)
+        has_azure_openai = any('openai' in (f.get('patch', '') or '').lower() for f in files) or \
+                          'azureopenai' in all_filenames_str or 'azure_openai' in all_filenames_str
         
         # Detect agent types
         agent_classes = [c for c in all_classes if 'agent' in c.lower()]

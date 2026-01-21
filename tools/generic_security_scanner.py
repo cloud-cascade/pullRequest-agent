@@ -263,9 +263,100 @@ def scan_language_specific(filename: str, lines: List[str], language: str) -> Li
     return findings
 
 
+def _parse_json_input(input_str):
+    """Try multiple methods to parse JSON input.
+    
+    Args:
+        input_str: String that might contain JSON
+        
+    Returns:
+        Parsed data or None if all methods fail
+    """
+    if not isinstance(input_str, str):
+        return input_str if isinstance(input_str, (dict, list)) else None
+    
+    methods = [
+        # Method 1: Direct parse
+        lambda s: json.loads(s),
+        # Method 2: Strip and parse
+        lambda s: json.loads(s.strip().lstrip('\ufeff')),
+        # Method 3: Unicode unescape
+        lambda s: json.loads(__import__('codecs').decode(s, 'unicode_escape')),
+        # Method 4: Extract from markdown
+        lambda s: json.loads(__import__('re').search(r'```(?:json)?\s*([\s\S]*?)\s*```', s).group(1)),
+        # Method 5: Find JSON object
+        lambda s: json.loads(__import__('re').search(r'(\{[\s\S]*\})', s).group(1)),
+        # Method 6: Find JSON array
+        lambda s: json.loads(__import__('re').search(r'(\[[\s\S]*\])', s).group(1)),
+    ]
+    
+    for method in methods:
+        try:
+            result = method(input_str)
+            if result:
+                return result
+        except:
+            continue
+    
+    return None
+
+
+def _auto_fetch_pr_files():
+    """Auto-fetch PR files from GitHub using environment variables.
+    
+    Returns:
+        List of file dicts or None if fetch fails
+    """
+    import os
+    import requests
+    
+    repo = os.getenv("GITHUB_REPOSITORY", "")
+    pr_number = os.getenv("PR_NUMBER", "")
+    token = os.getenv("GITHUB_TOKEN", "")
+    
+    if not all([repo, pr_number, token]):
+        print(f"[SECURITY_SCANNER] Missing env vars: repo={bool(repo)}, pr={bool(pr_number)}, token={bool(token)}")
+        return None
+    
+    try:
+        pr_num = int(pr_number)
+    except ValueError:
+        print(f"[SECURITY_SCANNER] Invalid PR number: {pr_number}")
+        return None
+    
+    url = f"https://api.github.com/repos/{repo}/pulls/{pr_num}/files"
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json",
+        "X-GitHub-Api-Version": "2022-11-28"
+    }
+    
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        files = response.json()
+        
+        result = []
+        for file in files:
+            result.append({
+                'filename': file.get('filename', ''),
+                'status': file.get('status', ''),
+                'additions': file.get('additions', 0),
+                'deletions': file.get('deletions', 0),
+                'changes': file.get('changes', 0),
+                'patch': file.get('patch', '')
+            })
+        
+        print(f"[SECURITY_SCANNER] Auto-fetched {len(result)} files from PR #{pr_num}")
+        return result
+    except Exception as e:
+        print(f"[SECURITY_SCANNER] Failed to fetch PR data: {e}")
+        return None
+
+
 @ai_function(
     name="scan_security",
-    description="Scan code changes for security vulnerabilities including hardcoded secrets and language-specific issues. Pass the entire input message you received as the pr_files parameter."
+    description="Scan code changes for security vulnerabilities. Can auto-fetch PR data from GitHub if not provided. Just call this tool - it will get the PR data automatically from environment variables."
 )
 def scan_security_tool(
     pr_files: str = ""
@@ -273,20 +364,35 @@ def scan_security_tool(
     """Tool function for security scanning that the agent will call.
 
     Args:
-        pr_files: Can be either:
-            - JSON string containing PR data: '{"pr_number": ..., "files": [...]}'
-            - Direct Python object (dict/list) with PR data
-            - Full PR data object: {"pr_number": ..., "files": [...]}
-            - Just the files array: [{"filename": ..., "patch": ...}, ...]
+        pr_files: Optional - PR data as JSON string. If not provided or invalid,
+                  the tool will automatically fetch PR data from GitHub using
+                  environment variables (GITHUB_REPOSITORY, PR_NUMBER, GITHUB_TOKEN).
 
     Returns:
         JSON string with security scan results
     """
+    import os
+    
     try:
-        # Validate input is provided
-        if not pr_files or len(str(pr_files).strip()) < 10:
+        files_data = None
+        
+        # Try to parse provided input first
+        if pr_files and len(str(pr_files).strip()) >= 10:
+            parsed_data = _parse_json_input(pr_files)
+            if parsed_data:
+                if isinstance(parsed_data, dict) and 'files' in parsed_data:
+                    files_data = parsed_data['files']
+                elif isinstance(parsed_data, list):
+                    files_data = parsed_data
+        
+        # If no valid data, auto-fetch from GitHub
+        if not files_data:
+            print("[SECURITY_SCANNER] No valid input data, auto-fetching from GitHub...")
+            files_data = _auto_fetch_pr_files()
+            
+        if not files_data:
             return json.dumps({
-                'error': 'No PR data provided. You must pass the PR data from get_pr_diff tool as the pr_files parameter.',
+                'error': 'Could not get PR data. Ensure GITHUB_REPOSITORY, PR_NUMBER, and GITHUB_TOKEN environment variables are set.',
                 'findings': [],
                 'summary': {
                     'total_issues': 0,
@@ -296,56 +402,25 @@ def scan_security_tool(
                 }
             })
 
-        # Parse the input - handle both string JSON and direct objects
-        parsed_data = None
-        if isinstance(pr_files, str):
-            try:
-                # First try to parse as JSON
-                parsed_data = json.loads(pr_files)
-            except json.JSONDecodeError as e:
-                # If JSON parsing fails, it might be because the LLM passed it incorrectly
-                # Try to extract JSON from the string or use it as-is
-                error_msg = f'JSON parsing error: {str(e)}'
-                
-                # Try to find if it's a nested JSON string (double-encoded)
-                try:
-                    # Sometimes the string is double-quoted, try unescaping
-                    import codecs
-                    unescaped = codecs.decode(pr_files, 'unicode_escape')
-                    parsed_data = json.loads(unescaped)
-                except:
-                    # If all parsing attempts fail, return helpful error
-                    return json.dumps({
-                        'error': error_msg,
-                        'hint': 'The input JSON may have unescaped special characters. Please pass the exact input message you received without modification.',
-                        'input_type': type(pr_files).__name__,
-                        'input_preview': pr_files[:200] if len(pr_files) > 200 else pr_files,
-                        'findings': [],
-                        'summary': {
-                            'total_issues': 0,
-                            'high_severity': 0,
-                            'medium_severity': 0,
-                            'low_severity': 0,
-                        }
-                    })
-        elif isinstance(pr_files, dict):
-            parsed_data = pr_files
-        elif isinstance(pr_files, list):
-            parsed_data = pr_files
-        else:
-            parsed_data = {}
-
-        # Handle both formats: full PR object or just files array
-        if isinstance(parsed_data, dict) and 'files' in parsed_data:
-            files_data = parsed_data['files']
-        elif isinstance(parsed_data, list):
-            files_data = parsed_data
-        else:
-            files_data = []
-
         result = scan_security(files_data)
-        return json.dumps(result, indent=2)
+        result_json = json.dumps(result, indent=2)
+        
+        # Store the result in a file for the aggregator to pick up as fallback
+        try:
+            cache_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.cache')
+            os.makedirs(cache_dir, exist_ok=True)
+            cache_file = os.path.join(cache_dir, 'security_scan_result.json')
+            with open(cache_file, 'w') as f:
+                f.write(result_json)
+            print(f"[SECURITY_SCANNER] Cached result with {len(files_data)} files scanned to {cache_file}")
+        except Exception as cache_err:
+            print(f"[SECURITY_SCANNER] Failed to cache result: {cache_err}")
+        
+        return result_json
     except Exception as e:
+        import traceback
+        print(f"[SECURITY_SCANNER] Error: {e}")
+        traceback.print_exc()
         return json.dumps({
             'error': str(e),
             'findings': [],
