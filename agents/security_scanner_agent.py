@@ -15,9 +15,10 @@ SECURITY_SCANNER_INSTRUCTIONS = """You are a security expert specializing in cod
 Scan the code changes in this Pull Request for security vulnerabilities.
 
 ## How to Scan
-Simply call the `scan_security` tool. It will automatically fetch the PR data from GitHub.
+Call the `scan_security` tool with the PR data you received as input.
+Pass the full JSON input you received to the `pr_files` parameter.
 
-You do NOT need to pass any parameters - the tool reads from environment variables.
+Example: If you receive JSON like {"pr_number": 123, "files": [...]}, pass the entire JSON string to pr_files.
 
 ## After Getting Results
 Once you receive the security scan results, provide expert analysis:

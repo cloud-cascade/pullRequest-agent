@@ -6,6 +6,8 @@ to provide structured output for the markdown formatter.
 """
 
 import json
+import os
+from pathlib import Path
 from typing import Any, List, Dict
 from agent_framework import Executor, WorkflowContext, handler
 
@@ -17,7 +19,41 @@ except ImportError:
     AgentExecutorResponse = Any
 
 
-def extract_tool_result_from_conversation(result) -> Dict[str, Any]:
+def load_cached_results() -> Dict[str, Any]:
+    """Load cached tool results from files.
+
+    The tools cache their results to .cache/ directory as a fallback mechanism.
+
+    Returns:
+        Dictionary with 'code_analysis' and 'security_scan' results if available
+    """
+    cache_dir = Path(__file__).parent.parent / '.cache'
+    results = {}
+
+    # Try to load code analysis result
+    code_cache = cache_dir / 'code_analysis_result.json'
+    if code_cache.exists():
+        try:
+            with open(code_cache, 'r') as f:
+                results['code_analysis'] = json.load(f)
+            print(f"[Aggregator] Loaded cached code analysis from {code_cache}")
+        except Exception as e:
+            print(f"[Aggregator] Failed to load code cache: {e}")
+
+    # Try to load security scan result
+    security_cache = cache_dir / 'security_scan_result.json'
+    if security_cache.exists():
+        try:
+            with open(security_cache, 'r') as f:
+                results['security_scan'] = json.load(f)
+            print(f"[Aggregator] Loaded cached security scan from {security_cache}")
+        except Exception as e:
+            print(f"[Aggregator] Failed to load security cache: {e}")
+
+    return results
+
+
+def extract_tool_result_from_conversation(result, debug: bool = True) -> Dict[str, Any]:
     """Extract tool call results from an agent's conversation history.
 
     This function looks through the agent's conversation to find tool responses
@@ -25,6 +61,7 @@ def extract_tool_result_from_conversation(result) -> Dict[str, Any]:
 
     Args:
         result: The AgentExecutorResponse or similar object
+        debug: Whether to print debug information about the result structure
 
     Returns:
         Dictionary containing executor_id and extracted tool_result
@@ -33,18 +70,33 @@ def extract_tool_result_from_conversation(result) -> Dict[str, Any]:
     tool_result = None
     agent_interpretation = ""
 
+    # Debug: print available attributes
+    if debug:
+        attrs = [a for a in dir(result) if not a.startswith('_')]
+        print(f"[Aggregator Debug] {executor_id} result attributes: {attrs}")
+
     # Get agent text response and check for tool results
     if hasattr(result, 'agent_run_response'):
         arr = result.agent_run_response
+        if debug:
+            arr_attrs = [a for a in dir(arr) if not a.startswith('_')]
+            print(f"[Aggregator Debug] agent_run_response attributes: {arr_attrs}")
 
         # Get the text response directly
         if hasattr(arr, 'text') and arr.text:
             agent_interpretation = arr.text
+            if debug:
+                print(f"[Aggregator Debug] Found text in agent_run_response: {len(arr.text)} chars")
 
         # Check messages for tool results
         if hasattr(arr, 'messages') and arr.messages:
-            for msg in arr.messages:
+            if debug:
+                print(f"[Aggregator Debug] Found {len(arr.messages)} messages in agent_run_response")
+            for idx, msg in enumerate(arr.messages):
                 msg_role = getattr(msg, 'role', None)
+                if debug:
+                    msg_attrs = [a for a in dir(msg) if not a.startswith('_')]
+                    print(f"[Aggregator Debug] Message {idx} role={msg_role}, attrs={msg_attrs}")
                 if msg_role == 'tool':
                     msg_content = getattr(msg, 'content', None) or getattr(msg, 'contents', None)
                     if msg_content:
@@ -52,6 +104,8 @@ def extract_tool_result_from_conversation(result) -> Dict[str, Any]:
                             parsed = json.loads(str(msg_content)) if isinstance(msg_content, str) else msg_content
                             if isinstance(parsed, dict) and ('files' in parsed or 'findings' in parsed):
                                 tool_result = parsed
+                                if debug:
+                                    print(f"[Aggregator Debug] Extracted tool result from message {idx}")
                         except (json.JSONDecodeError, TypeError):
                             pass
 
@@ -61,10 +115,15 @@ def extract_tool_result_from_conversation(result) -> Dict[str, Any]:
     # Method 1: Direct full_conversation attribute
     if hasattr(result, 'full_conversation') and result.full_conversation:
         full_conversation = result.full_conversation
+        if debug:
+            print(f"[Aggregator Debug] Found full_conversation directly: {len(full_conversation)} messages")
 
     # Method 2: Through agent_response
     elif hasattr(result, 'agent_response'):
         agent_response = result.agent_response
+        if debug:
+            ar_attrs = [a for a in dir(agent_response) if not a.startswith('_')]
+            print(f"[Aggregator Debug] agent_response attributes: {ar_attrs}")
         if hasattr(agent_response, 'full_conversation') and agent_response.full_conversation:
             full_conversation = agent_response.full_conversation
         elif hasattr(agent_response, 'messages') and agent_response.messages:
@@ -73,12 +132,17 @@ def extract_tool_result_from_conversation(result) -> Dict[str, Any]:
     # Method 3: Through response attribute
     elif hasattr(result, 'response'):
         response = result.response
+        if debug:
+            r_attrs = [a for a in dir(response) if not a.startswith('_')]
+            print(f"[Aggregator Debug] response attributes: {r_attrs}")
         if hasattr(response, 'full_conversation'):
             full_conversation = response.full_conversation
         elif hasattr(response, 'messages'):
             full_conversation = response.messages
 
     if full_conversation:
+        if debug:
+            print(f"[Aggregator Debug] Processing {len(full_conversation)} messages from conversation")
         for i, msg in enumerate(full_conversation):
             msg_role = getattr(msg, 'role', None)
 
@@ -109,9 +173,13 @@ def extract_tool_result_from_conversation(result) -> Dict[str, Any]:
 
             # Look for tool response messages
             if msg_role == 'tool':
+                if debug:
+                    print(f"[Aggregator Debug] Found tool message {i}, content length: {len(msg_content)}")
                 try:
                     parsed = json.loads(msg_content)
                     tool_result = parsed
+                    if debug:
+                        print(f"[Aggregator Debug] Successfully parsed tool result from message {i}")
                 except json.JSONDecodeError:
                     if msg_content.strip():
                         tool_result = {"raw": msg_content[:500]}
@@ -121,6 +189,8 @@ def extract_tool_result_from_conversation(result) -> Dict[str, Any]:
             elif msg_role == 'assistant':
                 if msg_content.strip() and len(msg_content.strip()) > len(agent_interpretation):
                     agent_interpretation = msg_content
+                    if debug:
+                        print(f"[Aggregator Debug] Updated interpretation from message {i}: {len(msg_content)} chars")
 
     # Fallback: try to extract from agent_response directly
     if tool_result is None and hasattr(result, 'agent_response'):
@@ -128,10 +198,14 @@ def extract_tool_result_from_conversation(result) -> Dict[str, Any]:
 
         # Check for tool_calls or function_calls in the response
         if hasattr(agent_response, 'tool_calls') and agent_response.tool_calls:
+            if debug:
+                print(f"[Aggregator Debug] Found {len(agent_response.tool_calls)} tool_calls")
             for tool_call in agent_response.tool_calls:
                 if hasattr(tool_call, 'result'):
                     try:
                         tool_result = json.loads(tool_call.result)
+                        if debug:
+                            print(f"[Aggregator Debug] Extracted result from tool_call")
                     except (json.JSONDecodeError, TypeError):
                         tool_result = {"raw": str(tool_call.result)[:500]}
                     break
@@ -141,12 +215,17 @@ def extract_tool_result_from_conversation(result) -> Dict[str, Any]:
         # Try to find JSON blocks in the interpretation
         import re
         json_blocks = re.findall(r'```json\s*([\s\S]*?)\s*```', agent_interpretation)
+        if debug and json_blocks:
+            print(f"[Aggregator Debug] Found {len(json_blocks)} JSON blocks in interpretation")
         for block in json_blocks:
             try:
                 tool_result = json.loads(block)
                 break
             except json.JSONDecodeError:
                 continue
+
+    if debug:
+        print(f"[Aggregator Debug] Final: tool_result={'Yes' if tool_result else 'No'}, interpretation={len(agent_interpretation)} chars")
 
     return {
         "executor_id": executor_id,
@@ -217,7 +296,20 @@ class PRAnalysisAggregator(Executor):
                         elif 'files' in tool_result:
                             code_analysis = tool_result
 
-        # Provide fallback empty structures if no results extracted
+        # Try to load from cache if extraction failed
+        if not code_analysis or not security_scan:
+            print("[Aggregator] Attempting to load from cached tool results...")
+            cached = load_cached_results()
+
+            if not code_analysis and 'code_analysis' in cached:
+                code_analysis = cached['code_analysis']
+                print(f"[Aggregator] Using cached code analysis: {len(code_analysis.get('files', []))} files")
+
+            if not security_scan and 'security_scan' in cached:
+                security_scan = cached['security_scan']
+                print(f"[Aggregator] Using cached security scan: {security_scan.get('summary', {}).get('total_issues', 0)} issues")
+
+        # Provide fallback empty structures if still no results
         if not code_analysis:
             print("[Aggregator] Warning: No code analysis result extracted, using empty structure")
             code_analysis = {

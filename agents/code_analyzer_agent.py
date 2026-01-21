@@ -15,9 +15,10 @@ CODE_ANALYZER_INSTRUCTIONS = """You are an expert code reviewer specializing in 
 Analyze the code changes in this Pull Request and provide expert insights.
 
 ## How to Analyze
-Simply call the `analyze_code_changes` tool. It will automatically fetch the PR data from GitHub.
+Call the `analyze_code_changes` tool with the PR data you received as input.
+Pass the full JSON input you received to the `pr_files` parameter.
 
-You do NOT need to pass any parameters - the tool reads from environment variables.
+Example: If you receive JSON like {"pr_number": 123, "files": [...]}, pass the entire JSON string to pr_files.
 
 ## After Getting Results
 Once you receive the analysis results, provide expert interpretation:
