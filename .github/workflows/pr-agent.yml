@@ -71,9 +71,10 @@ jobs:
           python pr-agent.py
 
   # Claude Code Action using Azure AI Foundry
-  # Triggers on @claude mentions in PR comments/reviews
+  # Runs automatically on every PR + responds to @claude mentions in comments
   claude:
     if: |
+      (github.event_name == 'pull_request') ||
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude'))
@@ -93,13 +94,15 @@ jobs:
       - name: Run Claude Code
         id: claude
         uses: anthropics/claude-code-action@v1
-        # with:
-          # Optional: customize allowed tools
-          # allowed_tools: "Edit,Write,Bash(git diff),Bash(git log)"
-
-          # Optional: add a system prompt for PR reviews
-          # claude_args: |
-          #   --system-prompt "You are a code reviewer. Analyze PR changes for bugs, security issues, and improvements."
+        with:
+          # Default prompt for automatic PR reviews
+          direct_prompt: |
+            Review this Pull Request and provide:
+            1. A summary of the changes
+            2. Code quality assessment
+            3. Potential bugs or issues
+            4. Security concerns if any
+            5. Suggestions for improvement
         env:
           # Azure AI Foundry configuration
           CLAUDE_CODE_USE_FOUNDRY: "1"
