@@ -66,6 +66,7 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           use_foundry: "true"
+          prompt: "Review and generate the summary of changes"
           claude_args: |
             --model claude-sonnet-4-5
           # ... other inputs
