@@ -91,8 +91,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Run Claude Code
-        id: claude
+      - name: Run Claude Code Action
         uses: anthropics/claude-code-action@v1
         with:
           # Default prompt for automatic PR reviews
@@ -104,6 +103,7 @@ jobs:
             4. Security concerns if any
             5. Suggestions for improvement
           use_foundry: "true"
+          allowed_tools: "edit,write,bash"
         env:
           # Azure AI Foundry configuration
           CLAUDE_CODE_USE_FOUNDRY: "1"
