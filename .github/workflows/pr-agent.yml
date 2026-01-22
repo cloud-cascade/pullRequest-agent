@@ -103,7 +103,9 @@ jobs:
             4. Security concerns if any
             5. Suggestions for improvement
           use_foundry: "true"
-          allowed_tools: "edit,write,bash"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
         env:
           # Azure AI Foundry configuration
           CLAUDE_CODE_USE_FOUNDRY: "1"
