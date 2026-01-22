@@ -96,13 +96,14 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           # Default prompt for automatic PR reviews
-          direct_prompt: |
+          prompt: |
             Review this Pull Request and provide:
             1. A summary of the changes
             2. Code quality assessment
             3. Potential bugs or issues
             4. Security concerns if any
             5. Suggestions for improvement
+          use_foundry: "true"
         env:
           # Azure AI Foundry configuration
           CLAUDE_CODE_USE_FOUNDRY: "1"
