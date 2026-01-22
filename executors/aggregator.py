@@ -25,7 +25,7 @@ def load_cached_results() -> Dict[str, Any]:
     The tools cache their results to .cache/ directory as a fallback mechanism.
 
     Returns:
-        Dictionary with 'code_analysis' and 'security_scan' results if available
+        Dictionary with 'code_analysis', 'security_scan', and 'file_summaries' results if available
     """
     cache_dir = Path(__file__).parent.parent / '.cache'
     results = {}
@@ -49,6 +49,16 @@ def load_cached_results() -> Dict[str, Any]:
             print(f"[Aggregator] Loaded cached security scan from {security_cache}")
         except Exception as e:
             print(f"[Aggregator] Failed to load security cache: {e}")
+
+    # Try to load file summaries result
+    summaries_cache = cache_dir / 'file_summaries_result.json'
+    if summaries_cache.exists():
+        try:
+            with open(summaries_cache, 'r') as f:
+                results['file_summaries'] = json.load(f)
+            print(f"[Aggregator] Loaded cached file summaries from {summaries_cache}")
+        except Exception as e:
+            print(f"[Aggregator] Failed to load summaries cache: {e}")
 
     return results
 
@@ -102,7 +112,7 @@ def extract_tool_result_from_conversation(result, debug: bool = True) -> Dict[st
                     if msg_content:
                         try:
                             parsed = json.loads(str(msg_content)) if isinstance(msg_content, str) else msg_content
-                            if isinstance(parsed, dict) and ('files' in parsed or 'findings' in parsed):
+                            if isinstance(parsed, dict) and ('files' in parsed or 'findings' in parsed or 'by_impact' in parsed):
                                 tool_result = parsed
                                 if debug:
                                     print(f"[Aggregator Debug] Extracted tool result from message {idx}")
@@ -238,9 +248,9 @@ class PRAnalysisAggregator(Executor):
     """Aggregator that collects and combines results from multiple agents.
 
     This executor is the final node in the workflow. It receives outputs
-    from all upstream agents (CodeAnalyzer, SecurityScanner) and extracts
-    the tool call results from their conversations to provide structured
-    data for the markdown formatter.
+    from all upstream agents (CodeAnalyzer, SecurityScanner, FileSummarizer)
+    and extracts the tool call results from their conversations to provide
+    structured data for the markdown formatter.
     """
 
     @handler
@@ -256,6 +266,7 @@ class PRAnalysisAggregator(Executor):
         # Initialize output structure
         code_analysis = {}
         security_scan = {}
+        file_summaries = {}
         agent_interpretations = {}
 
         for i, result in enumerate(results):
@@ -269,17 +280,23 @@ class PRAnalysisAggregator(Executor):
             if tool_result:
                 print(f"[Aggregator] Extracted tool result from {executor_id}")
                 if isinstance(tool_result, dict):
-                    if 'files' in tool_result:
-                        print(f"   - Code analysis: {len(tool_result.get('files', []))} files")
-                    elif 'findings' in tool_result:
+                    if 'findings' in tool_result:
                         print(f"   - Security scan: {tool_result.get('summary', {}).get('total_issues', 'N/A')} issues")
+                    elif 'by_impact' in tool_result:
+                        print(f"   - File summaries: {tool_result.get('total_files', 0)} files")
+                    elif 'files' in tool_result:
+                        print(f"   - Code analysis: {len(tool_result.get('files', []))} files")
             else:
                 print(f"[Aggregator] No tool result found from {executor_id}, using fallback")
 
             # Determine which agent this is and store results appropriately
             executor_lower = executor_id.lower()
 
-            if "code" in executor_lower or "analyzer" in executor_lower:
+            if "summarizer" in executor_lower or "summary" in executor_lower:
+                if tool_result:
+                    file_summaries = tool_result
+                agent_interpretations["file_summarizer"] = interpretation
+            elif "code" in executor_lower or "analyzer" in executor_lower:
                 if tool_result:
                     code_analysis = tool_result
                 agent_interpretations["code_analyzer"] = interpretation
@@ -293,11 +310,13 @@ class PRAnalysisAggregator(Executor):
                     if isinstance(tool_result, dict):
                         if 'findings' in tool_result or 'security' in str(tool_result.get('summary', {})).lower():
                             security_scan = tool_result
+                        elif 'by_impact' in tool_result:
+                            file_summaries = tool_result
                         elif 'files' in tool_result:
                             code_analysis = tool_result
 
         # Try to load from cache if extraction failed
-        if not code_analysis or not security_scan:
+        if not code_analysis or not security_scan or not file_summaries:
             print("[Aggregator] Attempting to load from cached tool results...")
             cached = load_cached_results()
 
@@ -308,6 +327,10 @@ class PRAnalysisAggregator(Executor):
             if not security_scan and 'security_scan' in cached:
                 security_scan = cached['security_scan']
                 print(f"[Aggregator] Using cached security scan: {security_scan.get('summary', {}).get('total_issues', 0)} issues")
+
+            if not file_summaries and 'file_summaries' in cached:
+                file_summaries = cached['file_summaries']
+                print(f"[Aggregator] Using cached file summaries: {file_summaries.get('total_files', 0)} files")
 
         # Provide fallback empty structures if still no results
         if not code_analysis:
@@ -335,10 +358,23 @@ class PRAnalysisAggregator(Executor):
                 }
             }
 
+        if not file_summaries:
+            print("[Aggregator] Warning: No file summaries result extracted, using empty structure")
+            file_summaries = {
+                "files": [],
+                "total_files": 0,
+                "by_impact": {
+                    "high": 0,
+                    "medium": 0,
+                    "low": 0
+                }
+            }
+
         # Build the combined output
         combined_output = {
             "code_analysis": code_analysis,
             "security_scan": security_scan,
+            "file_summaries": file_summaries,
             "agent_interpretations": agent_interpretations,
             "agent_count": len(results),
             "status": "completed"
@@ -348,6 +384,7 @@ class PRAnalysisAggregator(Executor):
         print(f"[Aggregator] Aggregation complete:")
         print(f"   - Code analysis: {len(code_analysis.get('files', []))} files analyzed")
         print(f"   - Security scan: {security_scan.get('summary', {}).get('total_issues', 0)} issues found")
+        print(f"   - File summaries: {file_summaries.get('total_files', 0)} files summarized")
 
         # Yield the combined output as the workflow result
         await ctx.yield_output(combined_output)

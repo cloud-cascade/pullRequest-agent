@@ -256,20 +256,44 @@ def generate_file_description(file_info: Dict) -> Tuple[str, str, List[str]]:
     return status_label, description, details
 
 
-def format_detailed_changes(files: List[Dict]) -> str:
+def format_detailed_changes(
+    files: List[Dict],
+    file_summaries: Dict = None,
+    summarizer_interpretation: str = ""
+) -> str:
     """Format detailed per-file change descriptions.
-    
+
     Args:
         files: List of file analysis dictionaries
-        
+        file_summaries: Optional dictionary with AI-generated file summaries
+        summarizer_interpretation: Optional interpretation from the FileSummarizer agent
+
     Returns:
         Markdown-formatted detailed changes section
     """
     if not files:
         return ""
-    
+
     md = "## 📝 Detailed Changes\n\n"
-    
+
+    # If we have AI-generated summaries from the FileSummarizer agent, use those first
+    if summarizer_interpretation and len(summarizer_interpretation.strip()) > 100:
+        md += "### AI-Generated Summaries\n\n"
+        md += summarizer_interpretation
+        md += "\n\n---\n\n"
+        md += "### File-by-File Details\n\n"
+
+    # Build a lookup map for file summaries if available
+    summary_map = {}
+    if file_summaries and 'files' in file_summaries:
+        for fs in file_summaries['files']:
+            filename = fs.get('filename', '')
+            if filename:
+                summary_map[filename] = {
+                    'impact': fs.get('impact', 'MEDIUM'),
+                    'context': fs.get('context', '')
+                }
+
     # Group files by directory for better organization
     files_by_dir = {}
     for f in files:
@@ -279,48 +303,69 @@ def format_detailed_changes(files: List[Dict]) -> str:
             directory = parts[0]
         else:
             directory = '(root)'
-        
+
         if directory not in files_by_dir:
             files_by_dir[directory] = []
         files_by_dir[directory].append(f)
-    
+
     # Sort directories for consistent output
     sorted_dirs = sorted(files_by_dir.keys())
-    
+
     for directory in sorted_dirs:
         dir_files = files_by_dir[directory]
-        
+
         for file_info in dir_files:
             filename = file_info.get('filename', 'Unknown')
             additions = file_info.get('additions', 0)
             deletions = file_info.get('deletions', 0)
-            
+
             status_label, description, details = generate_file_description(file_info)
-            
+
+            # Get AI-generated impact level if available
+            ai_summary = summary_map.get(filename, {})
+            impact = ai_summary.get('impact', '')
+
             # File header
             md += f"### `{filename}`\n"
-            md += f"**{status_label}** (+{additions}/-{deletions}): {description}\n"
-            
+
+            # Add impact badge if available
+            if impact:
+                impact_badge = {
+                    'HIGH': '🔴 HIGH',
+                    'MEDIUM': '🟡 MEDIUM',
+                    'LOW': '🟢 LOW'
+                }.get(impact, impact)
+                md += f"**{status_label}** (+{additions}/-{deletions}) | Impact: {impact_badge}\n\n"
+            else:
+                md += f"**{status_label}** (+{additions}/-{deletions}): {description}\n"
+
             # Detail bullets
             if details:
                 for detail in details:
                     md += f"- {detail}\n"
-            
+
             md += "\n"
-    
+
     return md
 
 
-def format_executive_summary(analysis_result: Dict, security_result: Dict) -> str:
+def format_executive_summary(
+    analysis_result: Dict,
+    security_result: Dict,
+    file_summaries: Dict = None,
+    summarizer_interpretation: str = ""
+) -> str:
     """Generate a human-readable executive summary of the PR changes.
-    
+
     This creates a concise, easy-to-understand overview that tells PR reviewers
     exactly what this PR does, why it matters, and whether it's ready to merge.
-    
+
     Args:
         analysis_result: Dictionary with code analysis results
         security_result: Dictionary with security scan results
-        
+        file_summaries: Optional dictionary with AI-generated file summaries
+        summarizer_interpretation: Optional interpretation from the FileSummarizer agent
+
     Returns:
         Markdown-formatted executive summary
     """
@@ -493,11 +538,47 @@ def format_executive_summary(analysis_result: Dict, security_result: Dict) -> st
     # =========================================================================
     # BUILD THE EXECUTIVE SUMMARY
     # =========================================================================
-    
+
     md = "## 📋 Executive Summary\n\n"
-    
+
+    # If we have an AI-generated overall summary, show it prominently
+    ai_overall_summary = ""
+    if summarizer_interpretation:
+        # Try to extract an overall summary from the agent's interpretation
+        # Look for "Overall Summary" section or similar
+        import re
+        overall_match = re.search(
+            r'(?:###?\s*)?Overall\s+Summary[:\s]*\n+(.*?)(?:\n\n|\n###|\n##|$)',
+            summarizer_interpretation,
+            re.IGNORECASE | re.DOTALL
+        )
+        if overall_match:
+            ai_overall_summary = overall_match.group(1).strip()
+
+    if ai_overall_summary:
+        md += f"> **AI Summary:** {ai_overall_summary}\n\n"
+
     # Main description paragraph
     md += f"{project_description}\n\n"
+
+    # Show file impact breakdown if available from file_summaries
+    if file_summaries and 'by_impact' in file_summaries:
+        by_impact = file_summaries['by_impact']
+        high_count = by_impact.get('high', 0)
+        medium_count = by_impact.get('medium', 0)
+        low_count = by_impact.get('low', 0)
+
+        if high_count > 0 or medium_count > 0 or low_count > 0:
+            md += "### Impact Assessment\n\n"
+            md += "| Impact Level | Files |\n"
+            md += "|--------------|-------|\n"
+            if high_count > 0:
+                md += f"| 🔴 HIGH | {high_count} |\n"
+            if medium_count > 0:
+                md += f"| 🟡 MEDIUM | {medium_count} |\n"
+            if low_count > 0:
+                md += f"| 🟢 LOW | {low_count} |\n"
+            md += "\n"
     
     # Architecture section (if we have notes)
     if architecture_notes:
