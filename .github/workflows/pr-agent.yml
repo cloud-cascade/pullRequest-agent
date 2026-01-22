@@ -93,7 +93,7 @@ jobs:
       - name: Run Claude Code
         id: claude
         uses: anthropics/claude-code-action@v1
-        with:
+        # with:
           # Optional: customize allowed tools
           # allowed_tools: "Edit,Write,Bash(git diff),Bash(git log)"
 
