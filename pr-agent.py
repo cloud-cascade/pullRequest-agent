@@ -35,7 +35,7 @@ except ImportError:
 from schemas import PRAgentConfig
 
 # Import agents
-from agents import create_code_analyzer_agent, create_security_scanner_agent
+from agents import create_code_analyzer_agent, create_security_scanner_agent, create_file_summarizer_agent
 
 # Import executors for fan-out/fan-in workflow
 from executors import PRAnalysisDispatcher, PRAnalysisAggregator
@@ -106,25 +106,29 @@ async def main():
         print("\nStep 4: Creating Security Scanning Agent...")
         security_agent = await create_security_scanner_agent(client)
 
-        # Step 5: Create Dispatcher and Aggregator executors
-        print("\nStep 5: Creating Workflow Executors...")
+        # Step 5: Create File Summarizer Agent
+        print("\nStep 5: Creating File Summarizer Agent...")
+        summarizer_agent = await create_file_summarizer_agent(client)
+
+        # Step 6: Create Dispatcher and Aggregator executors
+        print("\nStep 6: Creating Workflow Executors...")
         dispatcher = PRAnalysisDispatcher(id="dispatcher")
         aggregator = PRAnalysisAggregator(id="aggregator")
 
-        # Step 6: Build Workflow with Fan-Out/Fan-In Pattern
-        # Dispatcher fans out to both agents, then results are aggregated
-        print("\nStep 6: Building Fan-Out/Fan-In Workflow...")
-        print("   Workflow: Dispatcher -> [CodeAnalyzer, SecurityScanner] -> Aggregator")
+        # Step 7: Build Workflow with Fan-Out/Fan-In Pattern
+        # Dispatcher fans out to all agents, then results are aggregated
+        print("\nStep 7: Building Fan-Out/Fan-In Workflow...")
+        print("   Workflow: Dispatcher -> [CodeAnalyzer, SecurityScanner, FileSummarizer] -> Aggregator")
 
         workflow = (
             WorkflowBuilder()
             .set_start_executor(dispatcher)
-            .add_fan_out_edges(dispatcher, [code_agent, security_agent])
-            .add_fan_in_edges([code_agent, security_agent], aggregator)
+            .add_fan_out_edges(dispatcher, [code_agent, security_agent, summarizer_agent])
+            .add_fan_in_edges([code_agent, security_agent, summarizer_agent], aggregator)
             .build()
         )
 
-        print("\nStep 7: Executing Workflow...")
+        print("\nStep 8: Executing Workflow...")
 
         # Prepare minimal context for agents - they will fetch PR data themselves using tools
         # Agents are now autonomous and will call get_pr_diff tool on their own
@@ -164,17 +168,20 @@ async def main():
         print("WORKFLOW COMPLETED")
         print("=" * 60)
 
-        # Step 8: Extract results from aggregator and format PR comment
-        print("\nStep 8: Extracting results and formatting PR Comment...")
+        # Step 9: Extract results from aggregator and format PR comment
+        print("\nStep 9: Extracting results and formatting PR Comment...")
 
-        # Extract analysis, security results, and agent interpretations from aggregator output
+        # Extract analysis, security results, file summaries, and agent interpretations from aggregator output
         agent_interpretations = {}
+        file_summaries_result = {}
         if aggregator_output and isinstance(aggregator_output, dict):
             analysis_result = aggregator_output.get("code_analysis", {})
             security_result = aggregator_output.get("security_scan", {})
+            file_summaries_result = aggregator_output.get("file_summaries", {})
             agent_interpretations = aggregator_output.get("agent_interpretations", {})
             print(f"   Extracted code_analysis: {len(analysis_result.get('files', []))} files")
             print(f"   Extracted security_scan: {security_result.get('summary', {}).get('total_issues', 0)} issues")
+            print(f"   Extracted file_summaries: {file_summaries_result.get('total_files', 0)} files")
             if agent_interpretations:
                 print(f"   Extracted agent interpretations: {len(agent_interpretations)} agents")
         else:
@@ -203,15 +210,22 @@ async def main():
         # Check if we have structured data or need to use agent interpretations
         has_structured_analysis = len(analysis_result.get('files', [])) > 0
         has_structured_security = len(security_result.get('findings', [])) > 0 or security_result.get('summary', {}).get('files_scanned', 0) > 0
+        has_file_summaries = file_summaries_result.get('total_files', 0) > 0
         code_interpretation = agent_interpretations.get("code_analyzer", "")
         security_interpretation = agent_interpretations.get("security_scanner", "")
+        summarizer_interpretation = agent_interpretations.get("file_summarizer", "")
 
         # If we have agent interpretations but no structured data, use the interpretations directly
-        if (code_interpretation or security_interpretation) and not (has_structured_analysis or has_structured_security):
+        if (code_interpretation or security_interpretation or summarizer_interpretation) and not (has_structured_analysis or has_structured_security):
             print("   Using agent interpretations (tools did not return structured data)")
             # Build comment from agent interpretations
             comment_parts = ["## PR Analysis Report\n"]
             comment_parts.append(f"*Analysis powered by AI agents using Azure OpenAI*\n\n")
+
+            if summarizer_interpretation:
+                comment_parts.append("### File Summaries\n\n")
+                comment_parts.append(summarizer_interpretation)
+                comment_parts.append("\n\n")
 
             if code_interpretation:
                 comment_parts.append("### Code Analysis\n\n")
@@ -228,10 +242,20 @@ async def main():
             # Use structured formatting
             print("   Using structured data formatting")
             # Generate executive summary for easy reading
-            executive_summary = format_executive_summary(analysis_result, security_result)
+            executive_summary = format_executive_summary(
+                analysis_result,
+                security_result,
+                file_summaries_result,
+                summarizer_interpretation
+            )
 
             # Generate detailed per-file change descriptions
-            detailed_changes = format_detailed_changes(analysis_result.get('files', []))
+            # Use file summaries from the agent if available
+            detailed_changes = format_detailed_changes(
+                analysis_result.get('files', []),
+                file_summaries_result,
+                summarizer_interpretation
+            )
 
             analysis_md = format_code_analysis(analysis_result)
             security_md = format_security_scan(security_result)
@@ -244,8 +268,8 @@ async def main():
                 detailed_changes
             )
 
-        # Step 9: Post Comment to PR
-        print("\nStep 9: Posting Comment to PR...")
+        # Step 10: Post Comment to PR
+        print("\nStep 10: Posting Comment to PR...")
         success = post_pr_comment(
             config.github.github_repository, 
             config.github.pr_number, 

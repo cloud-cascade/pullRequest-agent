@@ -27,7 +27,7 @@ from agent_framework_devui import serve, register_cleanup
 load_dotenv()
 
 # Import agent creation functions
-from agents import create_code_analyzer_agent, create_security_scanner_agent
+from agents import create_code_analyzer_agent, create_security_scanner_agent, create_file_summarizer_agent
 
 # Import executors for workflow
 from executors import PRAnalysisDispatcher, PRAnalysisAggregator
@@ -35,6 +35,7 @@ from executors import PRAnalysisDispatcher, PRAnalysisAggregator
 # Import tools for standalone agents
 from tools.code_analyzer import analyze_code_changes_tool
 from tools.generic_security_scanner import scan_security_tool
+from tools.file_summarizer import summarize_file_changes_tool
 from tools.github_api import get_pr_diff_tool
 
 
@@ -66,6 +67,7 @@ async def create_entities():
     # Create individual agents for standalone testing
     code_analyzer = await create_code_analyzer_agent(client)
     security_scanner = await create_security_scanner_agent(client)
+    file_summarizer = await create_file_summarizer_agent(client)
 
     # Create the PR Analysis workflow (fan-out/fan-in pattern)
     dispatcher = PRAnalysisDispatcher(id="dispatcher")
@@ -74,18 +76,19 @@ async def create_entities():
     # Create fresh agents for workflow (each agent instance should be separate)
     workflow_code_agent = await create_code_analyzer_agent(client)
     workflow_security_agent = await create_security_scanner_agent(client)
+    workflow_summarizer_agent = await create_file_summarizer_agent(client)
 
     workflow = (
         WorkflowBuilder()
         .set_start_executor(dispatcher)
-        .add_fan_out_edges(dispatcher, [workflow_code_agent, workflow_security_agent])
-        .add_fan_in_edges([workflow_code_agent, workflow_security_agent], aggregator)
+        .add_fan_out_edges(dispatcher, [workflow_code_agent, workflow_security_agent, workflow_summarizer_agent])
+        .add_fan_in_edges([workflow_code_agent, workflow_security_agent, workflow_summarizer_agent], aggregator)
         .build()
     )
     # Give workflow a name for DevUI display
     workflow.name = "PRAnalysisWorkflow"
 
-    return [code_analyzer, security_scanner, workflow]
+    return [code_analyzer, security_scanner, file_summarizer, workflow]
 
 
 def main():
