@@ -11,40 +11,6 @@ sys.path.append(str(Path(__file__).parent.parent))
 from agent_framework import ai_function
 
 
-# Maximum patch size in characters to avoid overwhelming the AI
-MAX_PATCH_SIZE = 10000
-
-
-def sanitize_patch(patch: str) -> str:
-    """Sanitize and limit patch size to avoid JSON encoding issues.
-
-    Args:
-        patch: The raw patch string from GitHub
-
-    Returns:
-        Sanitized and potentially truncated patch
-    """
-    if not patch:
-        return ""
-
-    # Limit patch size
-    if len(patch) > MAX_PATCH_SIZE:
-        lines = patch.split('\n')
-        truncated_lines = []
-        current_size = 0
-
-        for line in lines:
-            if current_size + len(line) > MAX_PATCH_SIZE:
-                truncated_lines.append(f"\n... [Patch truncated - total size: {len(patch)} chars, showing first {MAX_PATCH_SIZE} chars] ...")
-                break
-            truncated_lines.append(line)
-            current_size += len(line) + 1  # +1 for newline
-
-        return '\n'.join(truncated_lines)
-
-    return patch
-
-
 def get_pr_diff(repo: str, pr_number: int, github_token: str) -> List[Dict]:
     """Fetch PR file changes using GitHub API.
 
@@ -75,14 +41,13 @@ def get_pr_diff(repo: str, pr_number: int, github_token: str) -> List[Dict]:
 
         result = []
         for file in files:
-            raw_patch = file.get('patch', '')
             result.append({
                 'filename': file.get('filename', ''),
                 'status': file.get('status', ''),  # added, removed, modified, renamed
                 'additions': file.get('additions', 0),
                 'deletions': file.get('deletions', 0),
                 'changes': file.get('changes', 0),
-                'patch': sanitize_patch(raw_patch)  # Sanitized diff
+                'patch': file.get('patch', '')  # The actual diff
             })
 
         print(f"Fetched {len(result)} changed files from PR #{pr_number}")
@@ -193,7 +158,7 @@ def get_pr_diff_tool(
         
         # Call the underlying function
         files = get_pr_diff(repo, pr_num, token)
-
+        
         # Return as JSON string
         result = {
             "pr_number": pr_num,
@@ -201,32 +166,8 @@ def get_pr_diff_tool(
             "file_count": len(files),
             "files": files
         }
-
-        # Try to encode as JSON with special character handling
-        try:
-            # Use ensure_ascii=False to handle Unicode and special characters properly
-            return json.dumps(result, indent=2, ensure_ascii=False)
-        except (TypeError, ValueError) as e:
-            # If JSON encoding fails, return simplified version without patches
-            print(f"Warning: JSON encoding failed, returning simplified response: {e}")
-            simplified = {
-                "pr_number": pr_num,
-                "repository": repo,
-                "file_count": len(files),
-                "error": "JSON encoding error - patch data may contain problematic characters",
-                "files": [
-                    {
-                        "filename": f.get("filename"),
-                        "status": f.get("status"),
-                        "additions": f.get("additions"),
-                        "deletions": f.get("deletions"),
-                        "changes": f.get("changes"),
-                        "patch": "[Removed due to encoding issues]"
-                    }
-                    for f in files
-                ]
-            }
-            return json.dumps(simplified, indent=2)
+        
+        return json.dumps(result, indent=2)
         
     except Exception as e:
         return json.dumps({

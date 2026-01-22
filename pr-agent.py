@@ -24,10 +24,10 @@ from agent_framework.azure import AzureOpenAIChatClient
 
 # Optional observability imports
 try:
-    from utils.observability import setup_pr_agent_observability, get_tracer
+    from utils.observability import configure_observability, get_tracer
     OBSERVABILITY_AVAILABLE = True
 except ImportError:
-    setup_pr_agent_observability = None  # type: ignore
+    configure_observability = None  # type: ignore
     get_tracer = None  # type: ignore
     OBSERVABILITY_AVAILABLE = False
 
@@ -78,8 +78,12 @@ async def main():
 
     print(f"\nAnalyzing PR #{config.github.pr_number} in {config.github.github_repository}")
 
-    # Step 1: Observability disabled for now
-    print("\nStep 1: Observability disabled (skipping)...")
+    # Step 1: Configure Observability
+    print("\nStep 1: Configuring Observability...")
+    if OBSERVABILITY_AVAILABLE and configure_observability:
+        configure_observability()
+    else:
+        print("   Observability: Not available (module not installed)")
 
     try:
         # Step 2: Initialize Azure OpenAI Client
