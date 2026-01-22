@@ -63,10 +63,12 @@ jobs:
           # Run the PR agent from the root directory
           python pr-agent.py
 
-      - name: Upload logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
+      - uses: anthropics/claude-code-action@v1
         with:
-          name: pr-agent-logs
-          path: "*.log"
-          retention-days: 7
+          use_foundry: "true"
+          claude_args: |
+            --model claude-sonnet-4-5
+          # ... other inputs
+        env:
+          ANTHROPIC_FOUNDRY_BASE_URL: ${{ secrets.ANTHROPIC_FOUNDRY_BASE_URL }}
+          ANTHROPIC_FOUNDRY_API_KEY: ${{ secrets.ANTHROPIC_FOUNDRY_API_KEY }}
