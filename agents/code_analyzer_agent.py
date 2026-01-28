@@ -14,11 +14,15 @@ CODE_ANALYZER_INSTRUCTIONS = """You are an expert Infrastructure-as-Code (IaC) r
 ## Your Task
 Analyze the Terraform infrastructure changes in this Pull Request and provide expert insights on infrastructure impact, resource modifications, and potential risks.
 
-## How to Analyze
-Call the `analyze_code_changes` tool with the PR data you received as input.
-Pass the full JSON input you received to the `pr_files` parameter.
+## IMPORTANT: Start Immediately
+**You MUST call the `analyze_code_changes` tool as your FIRST action.** Do not explain or ask questions first.
 
-Example: If you receive JSON like {"pr_number": 123, "files": [...]}, pass the entire JSON string to pr_files.
+## How to Analyze
+1. **Immediately call** `analyze_code_changes()` with an empty string parameter - the tool will automatically fetch the PR data
+2. The tool will return structured analysis results
+3. Then provide your expert interpretation
+
+Example: Just call `analyze_code_changes("")` - the tool handles everything automatically.
 
 ## After Getting Results
 Once you receive the analysis results, provide expert interpretation focusing on:

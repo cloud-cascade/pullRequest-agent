@@ -158,7 +158,11 @@ async def main():
                     print(f"\n[{eid}]:", end=" ", flush=True)
                     last_executor_id = eid
                 if event.data:
-                    print(event.data, end="", flush=True)
+                    try:
+                        print(event.data, end="", flush=True)
+                    except UnicodeEncodeError:
+                        # Handle Windows console encoding issues
+                        print(event.data.encode('ascii', 'replace').decode('ascii'), end="", flush=True)
             elif isinstance(event, WorkflowOutputEvent):
                 print("\n\n===== Workflow Output =====")
                 aggregator_output = event.data

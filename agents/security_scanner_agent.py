@@ -14,11 +14,15 @@ SECURITY_SCANNER_INSTRUCTIONS = """You are a cloud security expert specializing 
 ## Your Task
 Scan Terraform infrastructure changes for security vulnerabilities, misconfigurations, and compliance violations.
 
-## How to Scan
-Call the `scan_security` tool with the PR data you received as input.
-Pass the full JSON input you received to the `pr_files` parameter.
+## IMPORTANT: Start Immediately
+**You MUST call the `scan_security` tool as your FIRST action.** Do not explain or ask questions first.
 
-Example: If you receive JSON like {"pr_number": 123, "files": [...]}, pass the entire JSON string to pr_files.
+## How to Scan
+1. **Immediately call** `scan_security("")` with an empty string parameter - the tool will automatically fetch the PR data
+2. The tool will return security findings
+3. Then provide your expert security analysis
+
+Example: Just call `scan_security("")` - the tool handles everything automatically.
 
 ## After Getting Results
 Once you receive the security scan results, provide expert analysis:

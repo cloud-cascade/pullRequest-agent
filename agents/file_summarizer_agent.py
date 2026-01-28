@@ -14,12 +14,15 @@ FILE_SUMMARIZER_INSTRUCTIONS = """You are an expert at understanding Terraform i
 ## Your Task
 Generate meaningful, semantic summaries for each changed Terraform file in the Pull Request. Your summaries should help reviewers quickly understand what infrastructure changes are being made and their impact.
 
-## How to Summarize
-1. Call the `summarize_file_changes` tool with the PR data you received as input.
-2. Pass the full JSON input you received to the `pr_files` parameter.
-3. Analyze the returned Terraform file contexts and generate infrastructure-focused summaries.
+## IMPORTANT: Start Immediately
+**You MUST call the `summarize_file_changes` tool as your FIRST action.** Do not explain or ask questions first.
 
-Example: If you receive JSON like {"pr_number": 123, "files": [...]}, pass the entire JSON string to pr_files.
+## How to Summarize
+1. **Immediately call** `summarize_file_changes("")` with an empty string parameter - the tool will automatically fetch the PR data
+2. The tool will return file summaries with infrastructure context
+3. Then provide your infrastructure-focused analysis
+
+Example: Just call `summarize_file_changes("")` - the tool handles everything automatically.
 
 ## After Getting Results
 For each Terraform file in the results, provide a concise summary (1-2 sentences) explaining:
