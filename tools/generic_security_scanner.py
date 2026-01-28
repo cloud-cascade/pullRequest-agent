@@ -44,12 +44,17 @@ SECRET_PATTERNS = [
     # GitHub
     (r'ghp_[A-Za-z0-9]{36}', 'GitHub Personal Access Token', 'HIGH'),
     (r'github_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59}', 'GitHub Fine-grained PAT', 'HIGH'),
-    
+
     # Slack
     (r'xox[baprs]-[0-9A-Za-z]{10,}', 'Slack Token', 'HIGH'),
-    
+
     # SSH Keys
     (r'-----BEGIN (?:RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----', 'SSH Private Key', 'HIGH'),
+
+    # Terraform-specific patterns
+    (r'(?i)(access_key)\s*=\s*["\']([A-Z0-9]{16,})["\']', 'Hardcoded Access Key', 'HIGH'),
+    (r'(?i)(secret_key)\s*=\s*["\']([A-Za-z0-9/+=]{40,})["\']', 'Hardcoded Secret Key', 'HIGH'),
+    (r'(?i)(client_secret)\s*=\s*["\']([^"\']{20,})["\']', 'Azure Client Secret', 'HIGH'),
 ]
 
 # Patterns to exclude (false positives)
@@ -94,74 +99,65 @@ EXCLUSION_PATTERNS = [
     r'_PATTERNS\s*\[',            # Pattern list access
 ]
 
-# Language-specific security issues
+# Language-specific security issues (Terraform-only)
 LANGUAGE_SECURITY_PATTERNS = {
-    'python': [
-        (r'eval\s*\(', 'Dangerous eval() usage', 'HIGH', 'Avoid using eval() with untrusted input'),
-        (r'exec\s*\(', 'Dangerous exec() usage', 'HIGH', 'Avoid using exec() with untrusted input'),
-        (r'pickle\.loads?\s*\(', 'Insecure deserialization', 'HIGH', 'Pickle can execute arbitrary code'),
-        (r'subprocess\.(?:call|run|Popen)\s*\([^)]*shell\s*=\s*True', 'Shell injection risk', 'MEDIUM', 'Avoid shell=True with user input'),
-        (r'assert\s+', 'Assert used for security check', 'LOW', 'Asserts can be disabled with -O flag'),
-        (r'import\s+(?:urllib|requests).*verify\s*=\s*False', 'SSL verification disabled', 'MEDIUM', 'Enable SSL certificate verification'),
-    ],
-    'javascript': [
-        (r'eval\s*\(', 'Dangerous eval() usage', 'HIGH', 'Avoid using eval() with untrusted input'),
-        (r'innerHTML\s*=', 'Potential XSS vulnerability', 'MEDIUM', 'Use textContent or sanitize input'),
-        (r'document\.write\s*\(', 'Potential XSS vulnerability', 'MEDIUM', 'Avoid document.write with user input'),
-        (r'dangerouslySetInnerHTML', 'React XSS risk', 'MEDIUM', 'Sanitize HTML before rendering'),
-        (r'new\s+Function\s*\(', 'Dynamic code execution', 'HIGH', 'Avoid creating functions from strings'),
-    ],
-    'typescript': [
-        (r'eval\s*\(', 'Dangerous eval() usage', 'HIGH', 'Avoid using eval() with untrusted input'),
-        (r'innerHTML\s*=', 'Potential XSS vulnerability', 'MEDIUM', 'Use textContent or sanitize input'),
-        (r'dangerouslySetInnerHTML', 'React XSS risk', 'MEDIUM', 'Sanitize HTML before rendering'),
-        (r'as\s+any', 'Type safety bypassed', 'LOW', 'Avoid using "as any" type assertions'),
-    ],
-    'sql': [
-        (r'EXECUTE\s+(?:IMMEDIATE\s+)?[\'"]?\s*\+', 'SQL injection risk', 'HIGH', 'Use parameterized queries'),
-        (r'GRANT\s+ALL', 'Overly permissive grant', 'MEDIUM', 'Use principle of least privilege'),
-        (r'WITH\s+GRANT\s+OPTION', 'Privilege escalation risk', 'MEDIUM', 'Avoid WITH GRANT OPTION'),
-        (r'DROP\s+(?:TABLE|DATABASE|SCHEMA)', 'Destructive operation', 'MEDIUM', 'Ensure proper backups exist'),
-        (r'TRUNCATE\s+TABLE', 'Destructive operation', 'MEDIUM', 'Ensure proper backups exist'),
-    ],
-    'java': [
-        (r'Runtime\.getRuntime\(\)\.exec\s*\(', 'Command injection risk', 'HIGH', 'Sanitize command inputs'),
-        (r'ProcessBuilder', 'Command execution', 'MEDIUM', 'Validate inputs to ProcessBuilder'),
-        (r'ObjectInputStream', 'Insecure deserialization', 'HIGH', 'Validate serialized objects'),
-        (r'\.createQuery\s*\([^)]*\+', 'SQL injection risk', 'HIGH', 'Use parameterized queries'),
-    ],
-    'csharp': [
-        (r'Process\.Start\s*\(', 'Command execution', 'MEDIUM', 'Validate process arguments'),
-        (r'SqlCommand\s*\([^)]*\+', 'SQL injection risk', 'HIGH', 'Use parameterized queries'),
-        (r'BinaryFormatter', 'Insecure deserialization', 'HIGH', 'Avoid BinaryFormatter'),
-        (r'AllowHtml\]', 'XSS risk', 'MEDIUM', 'Sanitize HTML input'),
-    ],
-    'go': [
-        (r'exec\.Command\s*\(', 'Command execution', 'MEDIUM', 'Validate command arguments'),
-        (r'template\.HTML\s*\(', 'XSS risk', 'MEDIUM', 'Sanitize HTML content'),
-        (r'InsecureSkipVerify:\s*true', 'SSL verification disabled', 'MEDIUM', 'Enable SSL verification'),
-    ],
-    'bicep': [
-        (r'publicNetworkAccess\s*:\s*["\']?Enabled["\']?', 'Public network access enabled', 'MEDIUM', 'Consider using private endpoints'),
-        (r'allowBlobPublicAccess\s*:\s*true', 'Blob public access allowed', 'MEDIUM', 'Set allowBlobPublicAccess to false'),
-        (r'defaultAction\s*:\s*["\']?Allow["\']?', 'Network default action is Allow', 'MEDIUM', 'Set defaultAction to Deny'),
-        (r'httpsOnly\s*:\s*false', 'HTTPS not enforced', 'MEDIUM', 'Set httpsOnly to true'),
-        (r'minimumTlsVersion\s*:\s*["\']?TLS1_0["\']?', 'Weak TLS version', 'MEDIUM', 'Use TLS 1.2 or higher'),
-    ],
     'terraform': [
-        (r'publicly_accessible\s*=\s*true', 'Resource publicly accessible', 'MEDIUM', 'Restrict public access'),
-        (r'acl\s*=\s*["\']public', 'Public ACL configured', 'MEDIUM', 'Use private ACL'),
-        (r'encrypted\s*=\s*false', 'Encryption disabled', 'MEDIUM', 'Enable encryption'),
-        (r'ssl_policy\s*=\s*["\']ELBSecurityPolicy-2016', 'Outdated SSL policy', 'LOW', 'Use modern SSL policy'),
+        # Public Access Risks
+        (r'publicly_accessible\s*=\s*true', 'Resource publicly accessible', 'HIGH', 'Set publicly_accessible = false unless public access is required'),
+        (r'acl\s*=\s*["\']public-read["\']', 'Public read ACL configured', 'HIGH', 'Use private ACL for sensitive resources'),
+        (r'acl\s*=\s*["\']public-read-write["\']', 'Public read-write ACL configured', 'HIGH', 'Never use public-read-write ACL'),
+        (r'public_access_block_configuration\s*\{[^}]*block_public_acls\s*=\s*false', 'Public ACLs not blocked', 'MEDIUM', 'Block public ACLs on S3 buckets'),
+        (r'public_access_block_configuration\s*\{[^}]*ignore_public_acls\s*=\s*false', 'Public ACLs not ignored', 'MEDIUM', 'Ignore public ACLs on S3 buckets'),
+
+        # Encryption Issues
+        (r'encrypted\s*=\s*false', 'Encryption disabled', 'HIGH', 'Enable encryption at rest for all data stores'),
+        (r'enable_encryption\s*=\s*false', 'Encryption disabled', 'HIGH', 'Enable encryption for all resources'),
+        (r'storage_encrypted\s*=\s*false', 'Storage encryption disabled', 'HIGH', 'Enable storage encryption for RDS/databases'),
+        (r'enable_encryption_at_rest\s*=\s*false', 'Encryption at rest disabled', 'HIGH', 'Enable encryption at rest'),
+        (r'server_side_encryption_configuration\s*\{\s*\}', 'No server-side encryption configured', 'MEDIUM', 'Configure server-side encryption for S3'),
+
+        # TLS/SSL Security
+        (r'minimum_tls_version\s*=\s*["\']TLS1_0["\']', 'TLS 1.0 in use (deprecated)', 'HIGH', 'Use TLS 1.2 or higher'),
+        (r'minimum_tls_version\s*=\s*["\']TLS1_1["\']', 'TLS 1.1 in use (deprecated)', 'MEDIUM', 'Use TLS 1.2 or higher'),
+        (r'ssl_policy\s*=\s*["\']ELBSecurityPolicy-2016-08["\']', 'Outdated SSL policy', 'MEDIUM', 'Use ELBSecurityPolicy-TLS13 or newer'),
+        (r'enable_https\s*=\s*false', 'HTTPS not enforced', 'MEDIUM', 'Enable HTTPS for all web traffic'),
+
+        # Network Security
+        (r'cidr_blocks\s*=\s*\[\s*["\']0\.0\.0\.0/0["\']', 'Unrestricted ingress from internet', 'HIGH', 'Restrict source IP ranges to known networks'),
+        (r'source_address_prefix\s*=\s*["\']?\*["\']?', 'Unrestricted source address', 'MEDIUM', 'Specify explicit source address ranges'),
+        (r'destination_address_prefix\s*=\s*["\']?\*["\']?', 'Unrestricted destination address', 'LOW', 'Specify explicit destination address ranges'),
+        (r'protocol\s*=\s*["\']?\*["\']?', 'All protocols allowed', 'MEDIUM', 'Restrict to specific protocols (TCP/UDP)'),
+        (r'from_port\s*=\s*0[^0-9].*to_port\s*=\s*65535', 'All ports open', 'HIGH', 'Restrict port ranges to only required ports'),
+
+        # Access Control
+        (r'\*\s*(?:as|in|for)\s*Action', 'Wildcard action in IAM policy', 'HIGH', 'Use specific actions instead of wildcards'),
+        (r'Effect\s*=\s*["\']Allow["\'].*Resource\s*=\s*["\']?\*["\']?', 'Wildcard resource with Allow', 'HIGH', 'Restrict resource ARNs to specific resources'),
+        (r'Principal\s*=\s*["\']?\*["\']?', 'Wildcard principal', 'HIGH', 'Specify explicit principals'),
+
+        # Logging & Monitoring
+        (r'logging\s*\{\s*\}', 'Logging not configured', 'MEDIUM', 'Enable logging for audit trails'),
+        (r'enable_logging\s*=\s*false', 'Logging disabled', 'MEDIUM', 'Enable logging for security monitoring'),
+        (r'log_retention_days\s*=\s*["\']?[0-7]["\']?', 'Short log retention period', 'LOW', 'Increase log retention to at least 30 days'),
+
+        # Database Security
+        (r'skip_final_snapshot\s*=\s*true', 'Final snapshot skipped', 'MEDIUM', 'Enable final snapshot for databases'),
+        (r'deletion_protection\s*=\s*false', 'Deletion protection disabled', 'MEDIUM', 'Enable deletion protection for production databases'),
+        (r'backup_retention_period\s*=\s*0', 'No backup retention', 'HIGH', 'Configure backup retention for disaster recovery'),
+
+        # Sensitive Data (note: may have false positives if sensitive = true is used elsewhere)
+        (r'(?:password|secret|key)\s*=\s*["\'](?!var\.|data\.)[^"\']{4,}["\']', 'Potential hardcoded sensitive value', 'HIGH', 'Use variables with sensitive = true, or mark output as sensitive'),
+
+        # Version Pinning
+        (r'version\s*=\s*["\']~>\s*\d+["\']', 'Major version constraint only', 'LOW', 'Pin to specific version for production'),
     ],
-    'dockerfile': [
-        (r'FROM\s+.*:latest', 'Using latest tag', 'LOW', 'Pin to specific version'),
-        (r'USER\s+root', 'Running as root', 'MEDIUM', 'Create non-root user'),
-        (r'chmod\s+777', 'Overly permissive permissions', 'MEDIUM', 'Use minimal permissions'),
-        (r'--security-opt\s+seccomp:unconfined', 'Seccomp disabled', 'MEDIUM', 'Enable seccomp'),
+    'terraform-vars': [
+        # Hardcoded secrets in tfvars
+        (r'default\s*=\s*["\'][^"\']*(?:password|secret|key|token)[^"\']*["\']', 'Hardcoded secret in default value', 'HIGH', 'Remove default values for sensitive variables'),
+        (r'(?:password|secret|key|token)\s*=\s*["\'][^"\']{4,}["\']', 'Hardcoded sensitive value in tfvars', 'HIGH', 'Use environment variables or secret managers'),
     ],
-    'yaml': [
-        (r'!!python/', 'YAML code execution', 'HIGH', 'Use safe YAML loading'),
+    'hcl': [
+        # General HCL security
+        (r'sensitive\s*=\s*false', 'Sensitive data not marked', 'MEDIUM', 'Mark sensitive variables/outputs with sensitive = true'),
     ],
 }
 
@@ -356,7 +352,7 @@ def _auto_fetch_pr_files():
 
 @ai_function(
     name="scan_security",
-    description="Scan code changes for security vulnerabilities. Can auto-fetch PR data from GitHub if not provided. Just call this tool - it will get the PR data automatically from environment variables."
+    description="Scan Terraform infrastructure changes for security vulnerabilities and misconfigurations. Can auto-fetch PR data from GitHub if not provided. Just call this tool - it will get the PR data automatically from environment variables."
 )
 def scan_security_tool(
     pr_files: str = ""

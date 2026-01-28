@@ -1,14 +1,17 @@
-# PR Agent - AI-Powered Pull Request Analysis
+# Terraform PR Analysis Agent
 
-An intelligent PR review agent built with Microsoft Agent Framework that automatically analyzes code changes and provides detailed, human-readable feedback.
+An AI-powered Pull Request review agent specialized in Terraform infrastructure analysis. Built with Microsoft Agent Framework and Azure OpenAI (GPT-4) to automatically review infrastructure changes and detect security misconfigurations.
 
 ## Features
 
-- **Multi-Language Support**: Analyzes Python, JavaScript, TypeScript, Java, C#, Go, Bicep, Terraform, SQL, and more
-- **Intelligent Analysis**: Uses Azure OpenAI (GPT-4) for semantic code understanding
-- **Security Scanning**: Detects hardcoded secrets, SQL injection, XSS, and other vulnerabilities
-- **Executive Summaries**: Provides business-focused summaries for quick PR understanding
-- **Detailed Per-File Analysis**: Explains what each file does and why changes matter
+- **Terraform-Focused Analysis**: Specialized in analyzing Terraform (.tf, .tfvars, .hcl) infrastructure changes
+- **Multi-Cloud Support**: Detects and analyzes AWS, Azure, and GCP resources
+- **Infrastructure Change Detection**: Identifies resource creations, modifications, deletions, and replacements
+- **Security Misconfiguration Scanning**: Detects public exposure, encryption issues, weak TLS, network vulnerabilities, IAM issues
+- **Hardcoded Secret Detection**: Finds API keys, passwords, tokens, and credentials in Terraform files
+- **Breaking Change Identification**: Highlights changes that will cause resource replacement or downtime
+- **Executive Summaries**: Infrastructure-focused summaries for quick PR understanding
+- **Detailed Per-File Analysis**: Explains infrastructure changes and deployment risks
 - **Parallel Processing**: Uses fan-out/fan-in workflow pattern for efficient analysis
 - **Observability**: Built-in Azure Application Insights integration for monitoring
 
@@ -42,16 +45,17 @@ The PR agent is built on the [Microsoft Agent Framework](https://microsoft.githu
 ```
 
 **Agents:**
-- `CodeAnalyzerAgent` - Analyzes code structure, quality, and patterns
-- `SecurityScannerAgent` - Scans for security vulnerabilities
+- `CodeAnalyzerAgent` - Analyzes Terraform infrastructure changes, resources, modules, breaking changes
+- `SecurityScannerAgent` - Scans for Terraform security misconfigurations and hardcoded secrets
 
 **Executors:**
 - `PRAnalysisDispatcher` - Distributes work to agents (fan-out)
 - `PRAnalysisAggregator` - Combines agent results (fan-in)
 
 **Tools:**
-- `code_analyzer` - Multi-language code parsing and categorization
-- `generic_security_scanner` - Secret detection and vulnerability scanning
+- `code_analyzer` - Terraform HCL parsing, resource/module extraction, categorization
+- `generic_security_scanner` - Terraform security pattern matching, secret detection
+- `file_summarizer` - Infrastructure-focused semantic summaries
 - `github_api` - PR diff retrieval and comment posting
 
 ## Setup
@@ -323,27 +327,35 @@ Check that:
     └── bicep_utils.py
 ```
 
-### Adding New Languages
-
-Edit `tools/code_analyzer.py`:
-
-```python
-LANGUAGE_EXTENSIONS = {
-    'rust': ['.rs'],          # Add your language
-    # ...
-}
-```
-
-### Adding Security Rules
+### Adding Terraform Security Patterns
 
 Edit `tools/generic_security_scanner.py`:
 
 ```python
 LANGUAGE_SECURITY_PATTERNS = {
-    'rust': [
-        (r'unsafe\s+{', 'Unsafe block', 'MEDIUM', 'Review unsafe code carefully'),
+    'terraform': [
+        (r'your_pattern_here', 'Issue description', 'HIGH', 'Recommendation'),
+        # Add new Terraform security patterns here
     ],
 }
+```
+
+### Customizing Resource Detection
+
+Edit `utils/markdown_formatter.py` to add detection for specific cloud resources:
+
+```python
+# AWS
+if 'aws_your_resource' in patch_lower:
+    resource_types.append("Your Resource Type")
+
+# Azure
+if 'azurerm_your_resource' in patch_lower:
+    resource_types.append("Your Resource Type")
+
+# GCP
+if 'google_your_resource' in patch_lower:
+    resource_types.append("Your Resource Type")
 ```
 
 ## References
