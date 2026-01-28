@@ -10,60 +10,11 @@ sys.path.append(str(Path(__file__).parent.parent))
 from agent_framework import ai_function
 
 
-# Language detection based on file extension
+# Language detection based on file extension (Terraform-only)
 LANGUAGE_MAP = {
-    # Infrastructure as Code
-    '.bicep': 'bicep',
     '.tf': 'terraform',
-    '.json': 'json',
-    '.yaml': 'yaml',
-    '.yml': 'yaml',
-    
-    # Programming Languages
-    '.py': 'python',
-    '.js': 'javascript',
-    '.ts': 'typescript',
-    '.tsx': 'typescript',
-    '.jsx': 'javascript',
-    '.java': 'java',
-    '.cs': 'csharp',
-    '.go': 'go',
-    '.rs': 'rust',
-    '.rb': 'ruby',
-    '.php': 'php',
-    '.swift': 'swift',
-    '.kt': 'kotlin',
-    '.scala': 'scala',
-    '.cpp': 'cpp',
-    '.c': 'c',
-    '.h': 'c',
-    '.hpp': 'cpp',
-    
-    # Database
-    '.sql': 'sql',
-    
-    # Web
-    '.html': 'html',
-    '.css': 'css',
-    '.scss': 'scss',
-    '.less': 'less',
-    
-    # Config
-    '.xml': 'xml',
-    '.toml': 'toml',
-    '.ini': 'ini',
-    '.env': 'env',
-    '.properties': 'properties',
-    
-    # Shell
-    '.sh': 'shell',
-    '.bash': 'shell',
-    '.zsh': 'shell',
-    '.ps1': 'powershell',
-    
-    # Documentation
-    '.md': 'markdown',
-    '.rst': 'restructuredtext',
+    '.tfvars': 'terraform-vars',
+    '.hcl': 'hcl',
 }
 
 # Files to always ignore
@@ -76,6 +27,9 @@ IGNORED_FILES = {
     'Gemfile.lock',
     '.gitignore',
     '.dockerignore',
+    '.terraform.lock.hcl',  # Terraform lock file
+    '*.tfstate',  # Terraform state files (pattern)
+    '*.tfstate.backup',  # Terraform state backups
 }
 
 # Directories to ignore
@@ -94,28 +48,20 @@ IGNORED_DIRS = {
 
 
 def detect_language(filename: str) -> str:
-    """Detect the programming language from filename.
-    
+    """Detect Terraform file type from filename.
+
     Args:
         filename: The filename to analyze
-        
+
     Returns:
-        Language identifier string
+        Language identifier string ('terraform', 'terraform-vars', 'hcl', or 'unknown')
     """
-    # Check for special files
     basename = Path(filename).name.lower()
-    
-    if basename == 'dockerfile':
-        return 'dockerfile'
-    if basename == 'makefile':
-        return 'makefile'
-    if basename in ('requirements.txt', 'setup.py', 'pyproject.toml'):
-        return 'python-config'
-    if basename in ('package.json', 'tsconfig.json'):
-        return 'javascript-config'
-    if basename.endswith('.bicepparam'):
-        return 'bicep-params'
-    
+
+    # Ignore Terraform state files and lock files
+    if basename.endswith('.tfstate') or basename.endswith('.tfstate.backup') or basename == '.terraform.lock.hcl':
+        return 'unknown'
+
     # Check extension
     ext = Path(filename).suffix.lower()
     return LANGUAGE_MAP.get(ext, 'unknown')
@@ -150,44 +96,41 @@ def should_analyze_file(filename: str) -> bool:
 
 
 def categorize_change(filename: str, language: str) -> str:
-    """Categorize the type of change based on file and language.
-    
+    """Categorize Terraform files by their purpose.
+
     Args:
         filename: The changed file
         language: Detected language
-        
+
     Returns:
-        Category string
+        Category string (terraform-resources, terraform-modules, terraform-variables, terraform-outputs, terraform-providers)
     """
     filename_lower = filename.lower()
-    
-    # Infrastructure
-    if language in ('bicep', 'terraform', 'bicep-params') or 'infrastructure' in filename_lower:
-        return 'infrastructure'
-    
-    # Database
-    if language == 'sql' or 'migration' in filename_lower or 'schema' in filename_lower:
-        return 'database'
-    
-    # Tests
-    if 'test' in filename_lower or 'spec' in filename_lower or '__tests__' in filename_lower:
-        return 'tests'
-    
-    # Documentation
-    if language in ('markdown', 'restructuredtext') or 'docs/' in filename_lower or 'readme' in filename_lower:
-        return 'documentation'
-    
-    # Configuration
-    if language in ('yaml', 'json', 'toml', 'ini', 'env', 'properties', 'python-config', 'javascript-config'):
-        if 'config' in filename_lower or '.github' in filename_lower:
-            return 'configuration'
-    
-    # CI/CD
-    if '.github/workflows' in filename_lower or 'azure-pipelines' in filename_lower or 'jenkinsfile' in filename_lower.lower():
-        return 'ci-cd'
-    
-    # Source code (default)
-    return 'source-code'
+    basename = Path(filename).name.lower()
+
+    # Terraform-specific categorization
+    if language in ('terraform', 'terraform-vars', 'hcl'):
+        # Modules (files in modules/ directories or module definitions)
+        if '/modules/' in filename_lower or '/module/' in filename_lower:
+            return 'terraform-modules'
+
+        # Variables (variables.tf, *.tfvars, terraform.tfvars)
+        if 'variable' in basename or basename.endswith('.tfvars') or basename == 'terraform.tfvars':
+            return 'terraform-variables'
+
+        # Outputs (outputs.tf)
+        if 'output' in basename:
+            return 'terraform-outputs'
+
+        # Providers (providers.tf, provider configurations)
+        if 'provider' in basename or 'backend' in basename:
+            return 'terraform-providers'
+
+        # Resources (main.tf, *.tf resource definitions)
+        return 'terraform-resources'
+
+    # Default fallback
+    return 'unknown'
 
 
 def extract_changes_from_patch(patch: str) -> Dict:
@@ -241,87 +184,103 @@ def extract_changes_from_patch(patch: str) -> Dict:
     }
 
 
-def extract_functions_and_classes(patch: str, language: str) -> Dict:
-    """Extract function and class definitions from changes.
-    
+def extract_terraform_blocks(patch: str, language: str) -> Dict:
+    """Extract Terraform HCL block definitions from changes.
+
     Args:
         patch: Git diff patch content
-        language: Programming language
-        
+        language: Terraform language type
+
     Returns:
-        Dictionary with added/modified functions and classes
+        Dictionary with added/modified Terraform blocks (resources, modules, data sources, variables, outputs)
     """
-    functions_added = []
-    classes_added = []
-    
+    resources_added = []
+    modules_added = []
+    data_sources_added = []
+    variables_added = []
+    outputs_added = []
+
     if not patch:
-        return {'functions': functions_added, 'classes': classes_added}
-    
-    # Language-specific patterns
-    patterns = {
-        'python': {
-            'function': r'^\+\s*(?:async\s+)?def\s+(\w+)\s*\(',
-            'class': r'^\+\s*class\s+(\w+)',
-        },
-        'javascript': {
-            'function': r'^\+\s*(?:async\s+)?(?:function\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?(?:function|\([^)]*\)\s*=>))',
-            'class': r'^\+\s*class\s+(\w+)',
-        },
-        'typescript': {
-            'function': r'^\+\s*(?:async\s+)?(?:function\s+(\w+)|(?:const|let|var)\s+(\w+)\s*(?::\s*\w+)?\s*=\s*(?:async\s+)?(?:function|\([^)]*\)\s*=>))',
-            'class': r'^\+\s*(?:export\s+)?class\s+(\w+)',
-        },
-        'java': {
-            'function': r'^\+\s*(?:public|private|protected)?\s*(?:static\s+)?(?:\w+\s+)+(\w+)\s*\(',
-            'class': r'^\+\s*(?:public|private)?\s*class\s+(\w+)',
-        },
-        'csharp': {
-            'function': r'^\+\s*(?:public|private|protected|internal)?\s*(?:static\s+)?(?:async\s+)?(?:\w+\s+)+(\w+)\s*\(',
-            'class': r'^\+\s*(?:public|private|internal)?\s*(?:partial\s+)?class\s+(\w+)',
-        },
-        'go': {
-            'function': r'^\+\s*func\s+(?:\([^)]+\)\s+)?(\w+)\s*\(',
-            'class': r'^\+\s*type\s+(\w+)\s+struct',
-        },
-        'sql': {
-            'function': r'^\+\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE)\s+(?:\w+\.)?(\w+)',
-            'class': r'^\+\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:TABLE|VIEW)\s+(?:\w+\.)?(\w+)',
-        },
-        'bicep': {
-            'function': r'^\+\s*module\s+(\w+)',
-            'class': r"^\+\s*resource\s+(\w+)\s+'",
-        },
-    }
-    
-    lang_patterns = patterns.get(language, {})
-    func_pattern = lang_patterns.get('function')
-    class_pattern = lang_patterns.get('class')
-    
+        return {
+            'resources': resources_added,
+            'modules': modules_added,
+            'data_sources': data_sources_added,
+            'variables': variables_added,
+            'outputs': outputs_added,
+        }
+
+    # Only process Terraform files
+    if language not in ('terraform', 'terraform-vars', 'hcl'):
+        return {
+            'resources': resources_added,
+            'modules': modules_added,
+            'data_sources': data_sources_added,
+            'variables': variables_added,
+            'outputs': outputs_added,
+        }
+
+    # Terraform HCL patterns
+    # resource "type" "name"
+    resource_pattern = re.compile(r'^\+\s*resource\s+"([^"]+)"\s+"([^"]+)"')
+    # module "name"
+    module_pattern = re.compile(r'^\+\s*module\s+"([^"]+)"')
+    # data "type" "name"
+    data_pattern = re.compile(r'^\+\s*data\s+"([^"]+)"\s+"([^"]+)"')
+    # variable "name"
+    variable_pattern = re.compile(r'^\+\s*variable\s+"([^"]+)"')
+    # output "name"
+    output_pattern = re.compile(r'^\+\s*output\s+"([^"]+)"')
+
     for line in patch.split('\n'):
-        if func_pattern:
-            match = re.search(func_pattern, line)
-            if match:
-                # Get the first non-None group
-                name = next((g for g in match.groups() if g), None)
-                if name:
-                    functions_added.append(name)
-        
-        if class_pattern:
-            match = re.search(class_pattern, line)
-            if match:
-                name = next((g for g in match.groups() if g), None)
-                if name:
-                    classes_added.append(name)
-    
+        # Check for resources
+        match = resource_pattern.search(line)
+        if match:
+            resource_type = match.group(1)
+            resource_name = match.group(2)
+            resources_added.append(f"{resource_type}.{resource_name}")
+            continue
+
+        # Check for modules
+        match = module_pattern.search(line)
+        if match:
+            module_name = match.group(1)
+            modules_added.append(module_name)
+            continue
+
+        # Check for data sources
+        match = data_pattern.search(line)
+        if match:
+            data_type = match.group(1)
+            data_name = match.group(2)
+            data_sources_added.append(f"{data_type}.{data_name}")
+            continue
+
+        # Check for variables
+        match = variable_pattern.search(line)
+        if match:
+            var_name = match.group(1)
+            variables_added.append(var_name)
+            continue
+
+        # Check for outputs
+        match = output_pattern.search(line)
+        if match:
+            output_name = match.group(1)
+            outputs_added.append(output_name)
+            continue
+
     return {
-        'functions': functions_added,
-        'classes': classes_added,
+        'resources': resources_added,
+        'modules': modules_added,
+        'data_sources': data_sources_added,
+        'variables': variables_added,
+        'outputs': outputs_added,
     }
 
 
 @ai_function(
     name="analyze_code_changes",
-    description="Analyze code changes in a PR across multiple languages. Can auto-fetch PR data from GitHub if not provided. Just call this tool - it will get the PR data automatically from environment variables."
+    description="Analyze Terraform infrastructure changes in a PR. Can auto-fetch PR data from GitHub if not provided. Just call this tool - it will get the PR data automatically from environment variables."
 )
 def analyze_code_changes_tool(
     pr_files: str = ""
@@ -519,14 +478,14 @@ def analyze_code_changes(pr_files: List[Dict]) -> Dict:
         # Detect language and category
         language = detect_language(filename)
         category = categorize_change(filename, language)
-        
+
         # Extract changes
         changes = extract_changes_from_patch(patch)
-        code_elements = extract_functions_and_classes(patch, language)
-        
+        terraform_blocks = extract_terraform_blocks(patch, language)
+
         total_additions += changes['additions']
         total_deletions += changes['deletions']
-        
+
         file_analysis = {
             'filename': filename,
             'language': language,
@@ -534,8 +493,14 @@ def analyze_code_changes(pr_files: List[Dict]) -> Dict:
             'status': status,
             'additions': changes['additions'],
             'deletions': changes['deletions'],
-            'functions_added': code_elements['functions'],
-            'classes_added': code_elements['classes'],
+            'resources_added': terraform_blocks['resources'],
+            'modules_added': terraform_blocks['modules'],
+            'data_sources_added': terraform_blocks['data_sources'],
+            'variables_added': terraform_blocks['variables'],
+            'outputs_added': terraform_blocks['outputs'],
+            # Keep legacy fields for backward compatibility with markdown_formatter
+            'functions_added': terraform_blocks['resources'],  # Map resources to functions for compatibility
+            'classes_added': terraform_blocks['modules'],  # Map modules to classes for compatibility
         }
         
         all_files.append(file_analysis)

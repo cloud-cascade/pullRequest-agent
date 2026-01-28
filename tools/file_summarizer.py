@@ -75,8 +75,8 @@ def parse_diff_lines(patch: str) -> Tuple[List[str], List[str]]:
     return added, removed
 
 
-def extract_bicep_terraform_info(added_lines: List[str], removed_lines: List[str], filename: str) -> Dict:
-    """Extract infrastructure resource information from Bicep/Terraform files.
+def extract_terraform_info(added_lines: List[str], removed_lines: List[str], filename: str) -> Dict:
+    """Extract infrastructure resource information from Terraform files.
 
     Args:
         added_lines: Lines added in the diff
@@ -88,269 +88,77 @@ def extract_bicep_terraform_info(added_lines: List[str], removed_lines: List[str
     """
     info = {
         'resources_added': [],
-        'resources_modified': [],
-        'parameters_changed': [],
+        'modules_added': [],
+        'data_sources_added': [],
+        'variables_changed': [],
         'outputs_changed': [],
+        'providers_changed': [],
         'config_changes': []
     }
 
-    # Bicep patterns
-    bicep_resource = re.compile(r"resource\s+(\w+)\s+'([^']+)'")
-    bicep_param = re.compile(r"param\s+(\w+)")
-    bicep_var = re.compile(r"var\s+(\w+)")
-    bicep_output = re.compile(r"output\s+(\w+)")
-
     # Terraform patterns
     tf_resource = re.compile(r'resource\s+"([^"]+)"\s+"([^"]+)"')
+    tf_module = re.compile(r'module\s+"([^"]+)"')
     tf_data = re.compile(r'data\s+"([^"]+)"\s+"([^"]+)"')
     tf_variable = re.compile(r'variable\s+"([^"]+)"')
     tf_output = re.compile(r'output\s+"([^"]+)"')
+    tf_provider = re.compile(r'provider\s+"([^"]+)"')
 
     for line in added_lines:
-        # Bicep
-        match = bicep_resource.search(line)
-        if match:
-            info['resources_added'].append(f"{match.group(1)} ({match.group(2)})")
-            continue
-        match = bicep_param.search(line)
-        if match:
-            info['parameters_changed'].append(match.group(1))
-            continue
-        match = bicep_output.search(line)
-        if match:
-            info['outputs_changed'].append(match.group(1))
-            continue
-
-        # Terraform
+        # Resources
         match = tf_resource.search(line)
         if match:
-            info['resources_added'].append(f"{match.group(2)} ({match.group(1)})")
+            resource_type = match.group(1)
+            resource_name = match.group(2)
+            info['resources_added'].append(f"{resource_type}.{resource_name}")
             continue
+
+        # Modules
+        match = tf_module.search(line)
+        if match:
+            info['modules_added'].append(match.group(1))
+            continue
+
+        # Data sources
+        match = tf_data.search(line)
+        if match:
+            data_type = match.group(1)
+            data_name = match.group(2)
+            info['data_sources_added'].append(f"{data_type}.{data_name}")
+            continue
+
+        # Variables
         match = tf_variable.search(line)
         if match:
-            info['parameters_changed'].append(match.group(1))
+            info['variables_changed'].append(match.group(1))
             continue
+
+        # Outputs
         match = tf_output.search(line)
         if match:
             info['outputs_changed'].append(match.group(1))
             continue
 
-        # Config values
-        if '=' in line or ':' in line:
-            # Extract key-value patterns
-            kv_match = re.search(r"(\w+)\s*[=:]\s*['\"]?([^'\"}\n]+)", line)
+        # Providers
+        match = tf_provider.search(line)
+        if match:
+            info['providers_changed'].append(match.group(1))
+            continue
+
+        # Important config keys (instance_type, region, encryption, etc.)
+        if '=' in line:
+            kv_match = re.search(r'(\w+)\s*=\s*["\']?([^"\'\n]+)', line)
             if kv_match:
                 key, value = kv_match.groups()
-                if key.lower() in ['sku', 'tier', 'capacity', 'size', 'retention', 'location', 'name']:
+                if key.lower() in ['instance_type', 'sku', 'size', 'region', 'location', 'availability_zone',
+                                    'encrypted', 'encryption', 'publicly_accessible', 'cidr_block',
+                                    'subnet_ids', 'security_group_ids', 'engine', 'engine_version']:
                     info['config_changes'].append(f"{key}={value.strip()}")
 
     return info
 
 
-def extract_python_info(added_lines: List[str], removed_lines: List[str]) -> Dict:
-    """Extract Python code information from diff.
-
-    Args:
-        added_lines: Lines added in the diff
-        removed_lines: Lines removed in the diff
-
-    Returns:
-        Dictionary with extracted information
-    """
-    info = {
-        'functions_added': [],
-        'functions_removed': [],
-        'classes_added': [],
-        'classes_removed': [],
-        'imports_added': [],
-        'imports_removed': [],
-        'decorators': [],
-        'async_functions': [],
-        'variables_added': [],
-        'patterns_detected': [],
-        'docstrings': []
-    }
-
-    # Patterns
-    func_pattern = re.compile(r'def\s+(\w+)\s*\(([^)]*)\)')
-    async_func_pattern = re.compile(r'async\s+def\s+(\w+)\s*\(([^)]*)\)')
-    class_pattern = re.compile(r'class\s+(\w+)(?:\s*\(([^)]*)\))?')
-    import_pattern = re.compile(r'(?:from\s+(\S+)\s+)?import\s+(.+)')
-    decorator_pattern = re.compile(r'@(\w+)(?:\(([^)]*)\))?')
-    variable_pattern = re.compile(r'^(\w+)\s*[=:]\s*(.+)$')
-    docstring_pattern = re.compile(r'"""([^"]+)"""')
-
-    # Semantic patterns for better understanding
-    api_patterns = ['route', 'endpoint', 'api', 'get', 'post', 'put', 'delete', 'patch']
-    db_patterns = ['query', 'execute', 'commit', 'rollback', 'session', 'cursor', 'fetch']
-    auth_patterns = ['auth', 'login', 'logout', 'token', 'credential', 'password', 'permission']
-    error_patterns = ['exception', 'error', 'raise', 'try', 'except', 'catch', 'handle']
-
-    all_added_text = ' '.join(added_lines).lower()
-
-    for line in added_lines:
-        # Check for async functions
-        match = async_func_pattern.search(line)
-        if match:
-            func_name = match.group(1)
-            params = match.group(2).strip()
-            info['async_functions'].append(func_name)
-            info['functions_added'].append(f"{func_name}(async)")
-            continue
-
-        # Check for regular functions
-        match = func_pattern.search(line)
-        if match:
-            func_name = match.group(1)
-            params = match.group(2).strip()
-            # Add context based on function name
-            func_desc = func_name
-            if any(p in func_name.lower() for p in api_patterns):
-                func_desc = f"{func_name} (API)"
-            elif any(p in func_name.lower() for p in db_patterns):
-                func_desc = f"{func_name} (DB)"
-            elif any(p in func_name.lower() for p in auth_patterns):
-                func_desc = f"{func_name} (auth)"
-            info['functions_added'].append(func_desc)
-            continue
-
-        # Check for classes with inheritance
-        match = class_pattern.search(line)
-        if match:
-            class_name = match.group(1)
-            parent = match.group(2) if match.group(2) else None
-            if parent:
-                info['classes_added'].append(f"{class_name}({parent.strip()})")
-            else:
-                info['classes_added'].append(class_name)
-            continue
-
-        # Check for imports
-        match = import_pattern.search(line)
-        if match:
-            module = match.group(1) or match.group(2)
-            info['imports_added'].append(module.split(',')[0].strip())
-            continue
-
-        # Check for decorators with arguments
-        match = decorator_pattern.search(line)
-        if match:
-            decorator_name = match.group(1)
-            decorator_args = match.group(2) if match.group(2) else None
-            if decorator_args and 'name=' in decorator_args:
-                # Extract tool/route name from decorator
-                name_match = re.search(r'name\s*=\s*["\']([^"\']+)', decorator_args)
-                if name_match:
-                    info['decorators'].append(f"{decorator_name}:{name_match.group(1)}")
-                else:
-                    info['decorators'].append(decorator_name)
-            else:
-                info['decorators'].append(decorator_name)
-            continue
-
-        # Check for variable assignments (constants, configs)
-        match = variable_pattern.search(line.strip())
-        if match:
-            var_name = match.group(1)
-            var_value = match.group(2)
-            # Only capture significant variables (UPPER_CASE constants or specific patterns)
-            if var_name.isupper() or any(p in var_name.lower() for p in ['config', 'setting', 'option', 'default']):
-                info['variables_added'].append(var_name)
-            continue
-
-        # Check for docstrings
-        match = docstring_pattern.search(line)
-        if match:
-            docstring = match.group(1).strip()[:100]  # Limit length
-            if docstring:
-                info['docstrings'].append(docstring)
-
-    # Detect semantic patterns in added code
-    if any(p in all_added_text for p in api_patterns):
-        info['patterns_detected'].append('API endpoints')
-    if any(p in all_added_text for p in db_patterns):
-        info['patterns_detected'].append('database operations')
-    if any(p in all_added_text for p in auth_patterns):
-        info['patterns_detected'].append('authentication')
-    if any(p in all_added_text for p in error_patterns):
-        info['patterns_detected'].append('error handling')
-    if 'async' in all_added_text or 'await' in all_added_text:
-        info['patterns_detected'].append('async/await')
-    if 'logging' in all_added_text or 'logger' in all_added_text:
-        info['patterns_detected'].append('logging')
-    if 'cache' in all_added_text:
-        info['patterns_detected'].append('caching')
-    if 'test' in all_added_text or 'assert' in all_added_text or 'mock' in all_added_text:
-        info['patterns_detected'].append('testing')
-
-    # Process removed lines
-    for line in removed_lines:
-        match = async_func_pattern.search(line) or func_pattern.search(line)
-        if match:
-            info['functions_removed'].append(match.group(1))
-            continue
-        match = class_pattern.search(line)
-        if match:
-            info['classes_removed'].append(match.group(1))
-            continue
-        match = import_pattern.search(line)
-        if match:
-            module = match.group(1) or match.group(2)
-            info['imports_removed'].append(module.split(',')[0].strip())
-
-    return info
-
-
-def extract_js_ts_info(added_lines: List[str], removed_lines: List[str]) -> Dict:
-    """Extract JavaScript/TypeScript code information from diff.
-
-    Args:
-        added_lines: Lines added in the diff
-        removed_lines: Lines removed in the diff
-
-    Returns:
-        Dictionary with extracted information
-    """
-    info = {
-        'functions_added': [],
-        'functions_removed': [],
-        'classes_added': [],
-        'exports_added': [],
-        'imports_added': []
-    }
-
-    func_pattern = re.compile(r'(?:async\s+)?function\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\(|(\w+)\s*[=:]\s*(?:async\s*)?\([^)]*\)\s*=>')
-    class_pattern = re.compile(r'class\s+(\w+)')
-    export_pattern = re.compile(r'export\s+(?:default\s+)?(?:const|let|var|function|class)\s+(\w+)')
-    import_pattern = re.compile(r"import\s+.*from\s+['\"]([^'\"]+)")
-
-    for line in added_lines:
-        match = func_pattern.search(line)
-        if match:
-            name = match.group(1) or match.group(2) or match.group(3)
-            if name:
-                info['functions_added'].append(name)
-            continue
-        match = class_pattern.search(line)
-        if match:
-            info['classes_added'].append(match.group(1))
-            continue
-        match = export_pattern.search(line)
-        if match:
-            info['exports_added'].append(match.group(1))
-            continue
-        match = import_pattern.search(line)
-        if match:
-            info['imports_added'].append(match.group(1))
-
-    for line in removed_lines:
-        match = func_pattern.search(line)
-        if match:
-            name = match.group(1) or match.group(2) or match.group(3)
-            if name:
-                info['functions_removed'].append(name)
-
-    return info
+# Python and JavaScript extractors removed - Terraform-only support
 
 
 def extract_yaml_info(added_lines: List[str], removed_lines: List[str], filename: str) -> Dict:
@@ -433,137 +241,77 @@ def generate_semantic_summary(file_info: Dict, language: str) -> str:
 
     summary_parts = []
 
-    # Infrastructure files (Bicep, Terraform)
-    if language in ('bicep', 'terraform'):
-        info = extract_bicep_terraform_info(added_lines, removed_lines, filename)
+    # Terraform infrastructure files
+    if language in ('terraform', 'terraform-vars', 'hcl'):
+        info = extract_terraform_info(added_lines, removed_lines, filename)
 
+        # Resources
         if info['resources_added']:
             resources = ', '.join(info['resources_added'][:3])
-            summary_parts.append(f"adds {len(info['resources_added'])} resource(s): {resources}")
+            if len(info['resources_added']) > 3:
+                summary_parts.append(f"creates {len(info['resources_added'])} resources: {resources} +{len(info['resources_added'])-3} more")
+            else:
+                summary_parts.append(f"creates resources: {resources}")
 
-        if info['parameters_changed']:
-            params = ', '.join(info['parameters_changed'][:3])
-            summary_parts.append(f"configures parameters: {params}")
+        # Modules
+        if info['modules_added']:
+            modules = ', '.join(info['modules_added'][:3])
+            summary_parts.append(f"adds modules: {modules}")
 
-        if info['config_changes']:
-            configs = ', '.join(info['config_changes'][:4])
-            summary_parts.append(f"sets {configs}")
+        # Data sources
+        if info['data_sources_added']:
+            data_sources = ', '.join(info['data_sources_added'][:3])
+            summary_parts.append(f"queries data sources: {data_sources}")
 
+        # Variables
+        if info['variables_changed']:
+            variables = ', '.join(info['variables_changed'][:3])
+            summary_parts.append(f"configures variables: {variables}")
+
+        # Outputs
         if info['outputs_changed']:
             outputs = ', '.join(info['outputs_changed'][:2])
-            summary_parts.append(f"outputs: {outputs}")
+            summary_parts.append(f"exposes outputs: {outputs}")
 
-    # Python files
-    elif language == 'python':
-        info = extract_python_info(added_lines, removed_lines)
+        # Providers
+        if info['providers_changed']:
+            providers = ', '.join(info['providers_changed'])
+            summary_parts.append(f"configures providers: {providers}")
 
-        # Check for AI/agent tool definitions first (most specific)
-        ai_tool_decorators = [d for d in info['decorators'] if 'ai_function' in d or 'tool' in d.lower()]
-        if ai_tool_decorators:
-            tool_names = [d.split(':')[1] if ':' in d else d for d in ai_tool_decorators]
-            summary_parts.append(f"defines AI agent tool(s): {', '.join(tool_names[:2])}")
+        # Important config settings
+        if info['config_changes']:
+            # Group by key type
+            encryption_configs = [c for c in info['config_changes'] if 'encrypt' in c.lower()]
+            network_configs = [c for c in info['config_changes'] if any(k in c.lower() for k in ['cidr', 'subnet', 'security_group'])]
+            compute_configs = [c for c in info['config_changes'] if any(k in c.lower() for k in ['instance_type', 'sku', 'size'])]
+            region_configs = [c for c in info['config_changes'] if any(k in c.lower() for k in ['region', 'location', 'availability_zone'])]
 
-        # Classes with context
-        if info['classes_added']:
-            classes = ', '.join(info['classes_added'][:3])
-            summary_parts.append(f"adds class(es): {classes}")
+            if encryption_configs:
+                summary_parts.append(f"encryption: {', '.join(encryption_configs[:2])}")
+            if compute_configs:
+                summary_parts.append(f"compute: {', '.join(compute_configs[:2])}")
+            if network_configs:
+                summary_parts.append(f"network: {', '.join(network_configs[:2])}")
+            if region_configs:
+                summary_parts.append(f"region: {', '.join(region_configs[:1])}")
 
-        # Functions with semantic context (API, DB, auth markers)
-        if info['functions_added']:
-            funcs = ', '.join(info['functions_added'][:4])
-            summary_parts.append(f"adds function(s): {funcs}")
-
-        # Async functions specifically
-        if info['async_functions'] and 'async' not in str(info['functions_added']):
-            async_funcs = ', '.join(info['async_functions'][:3])
-            summary_parts.append(f"async: {async_funcs}")
-
-        # Removed functions
-        if info['functions_removed']:
-            funcs = ', '.join(info['functions_removed'][:3])
-            summary_parts.append(f"removes: {funcs}")
-
-        # Constants/config variables
-        if info['variables_added']:
-            vars_list = ', '.join(info['variables_added'][:3])
-            summary_parts.append(f"defines: {vars_list}")
-
-        # Detected semantic patterns (provides context about what the code does)
-        if info['patterns_detected'] and not summary_parts:
-            patterns = ', '.join(info['patterns_detected'][:3])
-            summary_parts.append(f"implements {patterns}")
-
-        # Use docstrings for context if no other summary
-        if info['docstrings'] and not summary_parts:
-            summary_parts.append(info['docstrings'][0][:80])
-
-        # Fall back to imports if nothing else
-        if info['imports_added'] and not summary_parts:
-            imports = ', '.join(info['imports_added'][:3])
-            summary_parts.append(f"imports: {imports}")
-
-    # JavaScript/TypeScript files
-    elif language in ('javascript', 'typescript'):
-        info = extract_js_ts_info(added_lines, removed_lines)
-
-        if info['classes_added']:
-            classes = ', '.join(info['classes_added'][:3])
-            summary_parts.append(f"adds class(es): {classes}")
-
-        if info['functions_added']:
-            funcs = ', '.join(info['functions_added'][:4])
-            summary_parts.append(f"adds function(s): {funcs}")
-
-        if info['exports_added']:
-            exports = ', '.join(info['exports_added'][:3])
-            summary_parts.append(f"exports: {exports}")
-
-    # YAML files (workflows, configs)
+    # YAML files (GitHub workflows)
     elif language == 'yaml':
         info = extract_yaml_info(added_lines, removed_lines, filename)
 
         if info['steps_added']:
             steps = ', '.join(info['steps_added'][:3])
-            summary_parts.append(f"adds workflow step(s): {steps}")
+            summary_parts.append(f"adds workflow steps: {steps}")
 
         if info['env_vars_changed']:
             vars = ', '.join(info['env_vars_changed'][:4])
-            summary_parts.append(f"configures env vars: {vars}")
+            summary_parts.append(f"configures environment variables: {vars}")
 
         if info['config_keys_changed'] and not summary_parts:
             keys = ', '.join(info['config_keys_changed'][:4])
-            summary_parts.append(f"updates config: {keys}")
+            summary_parts.append(f"updates configuration: {keys}")
 
-    # JSON files
-    elif language == 'json':
-        # Look for common patterns in added lines
-        key_pattern = re.compile(r'"(\w+)":\s*')
-        keys_changed = []
-        for line in added_lines[:20]:
-            match = key_pattern.search(line)
-            if match:
-                keys_changed.append(match.group(1))
-
-        if keys_changed:
-            keys = ', '.join(list(set(keys_changed))[:4])
-            summary_parts.append(f"modifies config keys: {keys}")
-
-    # SQL files
-    elif language == 'sql':
-        for line in added_lines:
-            line_lower = line.lower()
-            if 'create table' in line_lower:
-                match = re.search(r'create\s+table\s+(\w+)', line_lower)
-                if match:
-                    summary_parts.append(f"creates table: {match.group(1)}")
-            elif 'alter table' in line_lower:
-                summary_parts.append("alters table schema")
-            elif 'create index' in line_lower:
-                summary_parts.append("adds database index")
-            elif 'insert into' in line_lower:
-                summary_parts.append("inserts data")
-
-    # Fallback for other languages or if no patterns matched
+    # Fallback for other file types
     if not summary_parts:
         # Analyze the general nature of changes
         if status == 'added':
@@ -648,7 +396,7 @@ def _auto_fetch_pr_files():
 
 
 def determine_impact_level(file_info: Dict) -> str:
-    """Determine the impact level of a file change.
+    """Determine the impact level of a Terraform file change.
 
     Args:
         file_info: Dictionary with file information
@@ -661,51 +409,55 @@ def determine_impact_level(file_info: Dict) -> str:
     deletions = file_info.get('deletions', 0)
     status = file_info.get('status', 'modified')
     language = file_info.get('language', 'unknown')
+    patch = file_info.get('patch', '').lower()
 
     total_changes = additions + deletions
 
-    # High impact indicators
+    # High impact indicators for Terraform
     high_impact_patterns = [
-        'main.', 'app.', 'index.',  # Entry points
-        'config', 'settings', 'env',  # Configuration
-        'auth', 'security', 'credential',  # Security
-        'database', 'migration', 'schema',  # Database
-        'deploy', 'ci', 'workflow',  # CI/CD
-        '.bicep', '.tf',  # Infrastructure
-        'api', 'endpoint', 'router',  # API
+        'main.tf',  # Main infrastructure file
+        'provider', 'backend',  # Provider/backend configuration
+        'network', 'vpc', 'subnet', 'security_group',  # Networking
+        'database', 'rds', 'dynamodb', 'sql',  # Databases
+        'iam', 'role', 'policy',  # IAM/Security
+        'production', 'prod',  # Production environment
     ]
 
     for pattern in high_impact_patterns:
         if pattern in filename:
             return 'HIGH'
 
-    # Infrastructure files are high impact
-    if language in ('bicep', 'terraform'):
+    # Check for high-impact resource changes in patch
+    high_risk_resources = [
+        'aws_security_group', 'aws_iam', 'aws_rds', 'aws_db_instance',
+        'aws_vpc', 'aws_subnet', 'azurerm_virtual_network', 'azurerm_sql',
+        'google_compute_network', 'google_sql_database_instance'
+    ]
+    if any(resource in patch for resource in high_risk_resources):
         return 'HIGH'
 
     # Large changes are high impact
-    if total_changes > 200:
+    if total_changes > 100:
         return 'HIGH'
 
-    # New files with substantial content
-    if status == 'added' and additions > 50:
+    # New resource files with substantial content
+    if status == 'added' and additions > 30:
         return 'MEDIUM'
 
     # Medium impact for moderate changes
-    if total_changes > 50:
+    if total_changes > 30:
         return 'MEDIUM'
 
-    # Test files and documentation are usually low impact
+    # Test/example files are low impact
     low_impact_patterns = [
-        'test', 'spec', '__test__',
-        'readme', '.md', 'docs/',
-        'example', 'sample',
+        'test', 'example', 'sample', 'dev', 'development'
     ]
 
     for pattern in low_impact_patterns:
         if pattern in filename:
             return 'LOW'
 
+    # Default for Terraform files
     return 'MEDIUM'
 
 
@@ -809,7 +561,7 @@ def summarize_files(pr_files: List[Dict]) -> Dict:
 
 
 def generate_overall_summary(files: List[Dict]) -> str:
-    """Generate an overall summary of all changes in the PR.
+    """Generate an overall summary of all Terraform changes in the PR.
 
     Args:
         files: List of file info dictionaries with summaries
@@ -818,16 +570,16 @@ def generate_overall_summary(files: List[Dict]) -> str:
         Overall PR summary string
     """
     if not files:
-        return "No significant code changes detected."
+        return "No Terraform infrastructure changes detected."
 
-    # Group by category
+    # Group by Terraform category
     categories = {
-        'infrastructure': [],
-        'source_code': [],
-        'config': [],
-        'tests': [],
-        'docs': [],
-        'ci_cd': []
+        'resources': [],
+        'modules': [],
+        'variables': [],
+        'outputs': [],
+        'providers': [],
+        'workflows': []
     }
 
     for f in files:
@@ -835,49 +587,50 @@ def generate_overall_summary(files: List[Dict]) -> str:
         language = f.get('language', '')
         summary = f.get('summary', '')
 
-        if language in ('bicep', 'terraform') or 'infra' in filename:
-            categories['infrastructure'].append(summary)
-        elif 'test' in filename or 'spec' in filename:
-            categories['tests'].append(summary)
-        elif '.github' in filename or 'workflow' in filename or 'ci' in filename:
-            categories['ci_cd'].append(summary)
-        elif language in ('markdown', 'rst') or 'readme' in filename or 'doc' in filename:
-            categories['docs'].append(summary)
-        elif language in ('json', 'yaml', 'toml', 'ini') and 'config' in filename:
-            categories['config'].append(summary)
-        else:
-            categories['source_code'].append(summary)
+        if '.github' in filename or 'workflow' in filename:
+            categories['workflows'].append(summary)
+        elif language in ('terraform', 'terraform-vars', 'hcl'):
+            if 'module' in filename:
+                categories['modules'].append(summary)
+            elif 'variable' in filename or '.tfvars' in filename:
+                categories['variables'].append(summary)
+            elif 'output' in filename:
+                categories['outputs'].append(summary)
+            elif 'provider' in filename or 'backend' in filename:
+                categories['providers'].append(summary)
+            else:
+                categories['resources'].append(summary)
 
     # Build summary parts
     parts = []
 
-    if categories['infrastructure']:
-        parts.append(f"Infrastructure: {len(categories['infrastructure'])} file(s) - {categories['infrastructure'][0]}")
+    if categories['resources']:
+        parts.append(f"Resources: {len(categories['resources'])} file(s) - {categories['resources'][0]}")
 
-    if categories['source_code']:
-        parts.append(f"Source code: {len(categories['source_code'])} file(s) modified")
+    if categories['modules']:
+        parts.append(f"Modules: {len(categories['modules'])} module(s) modified")
 
-    if categories['ci_cd']:
-        parts.append(f"CI/CD: {len(categories['ci_cd'])} workflow file(s) updated")
+    if categories['variables']:
+        parts.append(f"Variables: {len(categories['variables'])} variable file(s) updated")
 
-    if categories['config']:
-        parts.append(f"Configuration: {len(categories['config'])} file(s) changed")
+    if categories['outputs']:
+        parts.append(f"Outputs: {len(categories['outputs'])} output file(s) changed")
 
-    if categories['tests']:
-        parts.append(f"Tests: {len(categories['tests'])} test file(s) modified")
+    if categories['providers']:
+        parts.append(f"Providers: {len(categories['providers'])} provider config(s) updated")
 
-    if categories['docs']:
-        parts.append(f"Documentation: {len(categories['docs'])} file(s) updated")
+    if categories['workflows']:
+        parts.append(f"CI/CD: {len(categories['workflows'])} workflow(s) modified")
 
     if not parts:
-        return f"Modified {len(files)} file(s) across the codebase."
+        return f"Modified {len(files)} Terraform file(s)."
 
     return ". ".join(parts) + "."
 
 
 @ai_function(
     name="summarize_file_changes",
-    description="Generate semantic summaries for each changed file in a PR. Returns file contexts with patches for LLM analysis. Can auto-fetch PR data from GitHub if not provided."
+    description="Generate semantic summaries for each changed Terraform file in a PR. Returns file contexts with patches for LLM analysis. Can auto-fetch PR data from GitHub if not provided."
 )
 def summarize_file_changes_tool(
     pr_files: str = ""

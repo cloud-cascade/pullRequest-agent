@@ -39,111 +39,11 @@ def generate_file_description(file_info: Dict) -> Tuple[str, str, List[str]]:
     details = []
     
     filename_lower = filename.lower()
-    
-    # =========================================================================
-    # AGENTS
-    # =========================================================================
-    if '/agents/' in filename and language == 'python':
-        if 'code_analyzer' in filename_lower:
-            description = "Python agent for analyzing code changes across multiple languages."
-            details.append("Uses Azure OpenAI to understand code semantics and patterns")
-            details.append("Provides insights on code quality, complexity, and best practices")
-        elif 'security_scanner' in filename_lower:
-            description = "Python agent for security vulnerability detection."
-            details.append("Scans for hardcoded secrets, SQL injection, XSS, and other vulnerabilities")
-            details.append("Provides severity classification (HIGH/MEDIUM/LOW) with recommendations")
-        elif 'diff_analyzer' in filename_lower:
-            description = "Python agent for analyzing Bicep infrastructure diffs."
-            details.append("Specializes in Azure resource changes and IaC best practices")
-        elif '__init__' in filename_lower:
-            description = "Module initialization for agents package."
-            details.append("Exports agent factory functions for workflow integration")
-        else:
-            agent_name = filename.split('/')[-1].replace('.py', '').replace('_', ' ').title()
-            description = f"Python agent: {agent_name}."
-            if classes_added:
-                details.append(f"Implements: {', '.join(classes_added)}")
-    
-    # =========================================================================
-    # EXECUTORS
-    # =========================================================================
-    elif '/executors/' in filename and language == 'python':
-        if 'dispatcher' in filename_lower:
-            description = "Workflow dispatcher for fan-out pattern."
-            details.append("Distributes analysis requests to multiple agents in parallel")
-            details.append("Entry point for the PR analysis workflow")
-        elif 'aggregator' in filename_lower:
-            description = "Workflow aggregator for fan-in pattern."
-            details.append("Collects and combines results from all agents")
-            details.append("Produces unified output for PR comment generation")
-        elif '__init__' in filename_lower:
-            description = "Module initialization for executors package."
-            details.append("Exports dispatcher and aggregator classes")
-        else:
-            description = "Workflow executor component."
-            if classes_added:
-                details.append(f"Implements: {', '.join(classes_added)}")
-    
-    # =========================================================================
-    # TOOLS
-    # =========================================================================
-    elif '/tools/' in filename and language == 'python':
-        if 'code_analyzer' in filename_lower:
-            description = "Multi-language code analysis tool."
-            details.append("Supports 30+ languages including Python, JavaScript, TypeScript, Java, Go, Bicep, Terraform")
-            details.append("Extracts functions, classes, and categorizes changes")
-        elif 'security_scanner' in filename_lower or 'generic_security' in filename_lower:
-            description = "Security scanning tool for vulnerability detection."
-            details.append("Detects hardcoded secrets, API keys, and credentials")
-            details.append("Language-specific vulnerability patterns (eval, SQL injection, XSS)")
-        elif 'github_api' in filename_lower:
-            description = "GitHub API integration utilities."
-            details.append("Fetches PR diffs and file changes")
-            details.append("Posts analysis comments to Pull Requests")
-        elif 'diff_analyzer' in filename_lower:
-            description = "Bicep infrastructure diff analysis tool."
-            details.append("Parses Azure resource changes from Bicep files")
-        elif 'bicep_parser' in filename_lower:
-            description = "Bicep file parser for Azure infrastructure."
-            details.append("Extracts resources, parameters, and modules from Bicep templates")
-        elif '__init__' in filename_lower:
-            description = "Module initialization for tools package."
-            details.append("Exports tool functions for agent use")
-        else:
-            tool_name = filename.split('/')[-1].replace('.py', '').replace('_', ' ').title()
-            description = f"Utility tool: {tool_name}."
-    
-    # =========================================================================
-    # UTILS
-    # =========================================================================
-    elif '/utils/' in filename and language == 'python':
-        if 'markdown_formatter' in filename_lower:
-            description = "Markdown formatting utilities for PR comments."
-            details.append("Generates executive summaries and detailed file analysis")
-            details.append("Formats security findings with severity indicators")
-            details.append("Creates collapsible sections for better readability")
-        elif 'bicep_utils' in filename_lower:
-            description = "Bicep-specific utility functions."
-            details.append("Helpers for parsing and analyzing Azure Bicep templates")
-        elif '__init__' in filename_lower:
-            description = "Module initialization for utils package."
-        else:
-            util_name = filename.split('/')[-1].replace('.py', '').replace('_', ' ').title()
-            description = f"Utility module: {util_name}."
-    
-    # =========================================================================
-    # MAIN SCRIPTS
-    # =========================================================================
-    elif 'pr-agent.py' in filename_lower or 'pr_agent.py' in filename_lower:
-        description = "Main PR analysis orchestrator script."
-        details.append("Coordinates the multi-agent workflow using Microsoft Agent Framework")
-        details.append("Fetches PR data, runs analysis, and posts results as comments")
-        details.append("Implements fan-out/fan-in pattern for parallel agent execution")
-    
+
     # =========================================================================
     # WORKFLOWS
     # =========================================================================
-    elif '.github/workflows' in filename:
+    if '.github/workflows' in filename:
         workflow_name = filename.split('/')[-1].replace('.yml', '').replace('.yaml', '')
         if 'pr-agent' in filename_lower or 'pr_agent' in filename_lower:
             description = f"GitHub Actions workflow: `{workflow_name}`."
@@ -158,68 +58,93 @@ def generate_file_description(file_info: Dict) -> Tuple[str, str, List[str]]:
             description = f"GitHub Actions workflow: `{workflow_name}`."
     
     # =========================================================================
-    # BICEP (Infrastructure as Code)
+    # TERRAFORM (Infrastructure as Code)
     # =========================================================================
-    elif language == 'bicep' or filename.endswith('.bicep'):
+    elif language in ('terraform', 'terraform-vars', 'hcl') or filename.endswith('.tf') or filename.endswith('.tfvars'):
         resource_types = []
+        cloud_provider = None
         patch_lower = patch.lower() if patch else ''
-        
-        if 'eventhub' in filename_lower or 'microsoft.eventhub' in patch_lower:
-            resource_types.append("Event Hub")
-        if 'functionapp' in filename_lower or 'function' in filename_lower or 'microsoft.web/sites' in patch_lower:
-            resource_types.append("Function App")
-        if 'storage' in filename_lower or 'microsoft.storage' in patch_lower:
-            resource_types.append("Storage Account")
-        if 'vnet' in filename_lower or 'network' in filename_lower or 'microsoft.network' in patch_lower:
-            resource_types.append("Virtual Network")
-        if 'keyvault' in filename_lower or 'microsoft.keyvault' in patch_lower:
-            resource_types.append("Key Vault")
-        if 'privateendpoint' in filename_lower:
-            resource_types.append("Private Endpoint")
-        
-        if '/modules/' in filename:
-            module_name = filename.split('/')[-2] if filename.endswith('main.bicep') else filename.split('/')[-1].replace('.bicep', '')
+
+        # Detect cloud provider and resources
+        # AWS
+        if 'aws_' in patch_lower or 'aws_' in filename_lower:
+            cloud_provider = "AWS"
+            if 'aws_instance' in patch_lower or 'aws_ec2' in patch_lower:
+                resource_types.append("EC2 Instances")
+            if 'aws_s3' in patch_lower:
+                resource_types.append("S3 Buckets")
+            if 'aws_rds' in patch_lower or 'aws_db_instance' in patch_lower:
+                resource_types.append("RDS Databases")
+            if 'aws_vpc' in patch_lower or 'aws_subnet' in patch_lower:
+                resource_types.append("VPC Networking")
+            if 'aws_security_group' in patch_lower:
+                resource_types.append("Security Groups")
+            if 'aws_lambda' in patch_lower:
+                resource_types.append("Lambda Functions")
+            if 'aws_iam' in patch_lower:
+                resource_types.append("IAM Roles/Policies")
+            if 'aws_elb' in patch_lower or 'aws_lb' in patch_lower or 'aws_alb' in patch_lower:
+                resource_types.append("Load Balancers")
+
+        # Azure
+        elif 'azurerm_' in patch_lower or 'azurerm_' in filename_lower:
+            cloud_provider = "Azure"
+            if 'azurerm_virtual_machine' in patch_lower or 'azurerm_linux_virtual_machine' in patch_lower:
+                resource_types.append("Virtual Machines")
+            if 'azurerm_storage' in patch_lower:
+                resource_types.append("Storage Accounts")
+            if 'azurerm_sql' in patch_lower or 'azurerm_mssql' in patch_lower:
+                resource_types.append("SQL Databases")
+            if 'azurerm_virtual_network' in patch_lower or 'azurerm_subnet' in patch_lower:
+                resource_types.append("Virtual Networks")
+            if 'azurerm_network_security_group' in patch_lower:
+                resource_types.append("Network Security Groups")
+            if 'azurerm_function_app' in patch_lower:
+                resource_types.append("Function Apps")
+            if 'azurerm_key_vault' in patch_lower:
+                resource_types.append("Key Vaults")
+
+        # GCP
+        elif 'google_' in patch_lower or 'google_' in filename_lower:
+            cloud_provider = "GCP"
+            if 'google_compute_instance' in patch_lower:
+                resource_types.append("Compute Instances")
+            if 'google_storage_bucket' in patch_lower:
+                resource_types.append("Storage Buckets")
+            if 'google_sql_database_instance' in patch_lower:
+                resource_types.append("Cloud SQL")
+            if 'google_compute_network' in patch_lower or 'google_compute_subnetwork' in patch_lower:
+                resource_types.append("VPC Networks")
+            if 'google_compute_firewall' in patch_lower:
+                resource_types.append("Firewall Rules")
+
+        # Categorize by file type
+        if '/modules/' in filename or '/module/' in filename:
+            module_name = filename.split('/')[-2] if filename.endswith('main.tf') else filename.split('/')[-1].replace('.tf', '')
             if resource_types:
-                description = f"Bicep module for {', '.join(resource_types)}."
+                description = f"Terraform module for {cloud_provider or 'cloud'} {', '.join(resource_types)}."
             else:
-                description = f"Bicep module: `{module_name}`."
-            details.append("Reusable infrastructure component for Azure deployments")
+                description = f"Terraform module: `{module_name}`."
+            details.append("Reusable infrastructure component")
+        elif 'variable' in filename_lower or filename.endswith('.tfvars'):
+            description = f"Terraform variables file."
+            details.append("Defines input parameters for infrastructure")
+        elif 'output' in filename_lower:
+            description = f"Terraform outputs file."
+            details.append("Exposes infrastructure values for cross-stack references")
+        elif 'provider' in filename_lower or 'backend' in filename_lower:
+            description = f"Terraform provider/backend configuration."
+            if cloud_provider:
+                details.append(f"Configures {cloud_provider} provider")
+            details.append("Manages state backend and provider versions")
         else:
-            if resource_types:
-                description = f"Azure Bicep template for {', '.join(resource_types)}."
+            if cloud_provider and resource_types:
+                description = f"{cloud_provider} Terraform configuration for {', '.join(resource_types[:3])}."
+            elif cloud_provider:
+                description = f"{cloud_provider} Terraform infrastructure."
             else:
-                description = "Azure Bicep infrastructure template."
-    
-    # =========================================================================
-    # PARAMETER FILES
-    # =========================================================================
-    elif '/parameters/' in filename or filename.endswith('.parameters.json'):
-        env_name = filename.split('/')[-1].replace('.json', '').replace('.parameters', '')
-        description = f"Parameter file for `{env_name}` environment."
-        details.append("Contains environment-specific configuration values")
-        if 'dev' in env_name.lower():
-            details.append("Development environment settings")
-        elif 'qa' in env_name.lower() or 'test' in env_name.lower():
-            details.append("QA/Test environment settings")
-        elif 'prod' in env_name.lower():
-            details.append("Production environment settings - review carefully")
-    
-    # =========================================================================
-    # CONFIGURATION FILES
-    # =========================================================================
-    elif filename == 'requirements.txt' or filename.endswith('/requirements.txt'):
-        description = "Python dependencies file."
-        details.append("Lists required packages for the PR agent")
-    elif filename.endswith('.env') or filename.endswith('.env.example'):
-        description = "Environment variables configuration."
-        details.append("Template for required environment variables")
-    elif 'pyproject.toml' in filename:
-        description = "Python project configuration."
-        details.append("Defines project metadata, dependencies, and build settings")
-    elif 'package.json' in filename:
-        description = "Node.js project configuration."
-        details.append("Defines project dependencies and scripts")
-    
+                description = "Terraform infrastructure configuration."
+
     # =========================================================================
     # DOCUMENTATION
     # =========================================================================
@@ -228,30 +153,26 @@ def generate_file_description(file_info: Dict) -> Tuple[str, str, List[str]]:
         if 'readme' in filename_lower:
             description = "Project documentation (README)."
             details.append("Describes project setup, usage, and configuration")
+        elif 'claude' in filename_lower:
+            description = "Claude Code instructions."
+            details.append("Guidance for Claude Code AI assistant")
         else:
             description = f"Documentation: `{doc_name}`."
-    
-    # =========================================================================
-    # TEST FILES
-    # =========================================================================
-    elif '/test' in filename_lower or 'test_' in filename_lower or '_test.' in filename_lower:
-        description = "Test file."
-        if functions_added:
-            details.append(f"Test functions: {', '.join(functions_added[:5])}")
-    
+
     # =========================================================================
     # GENERIC FALLBACK
     # =========================================================================
     else:
         if language and language != 'unknown':
-            description = f"{language.title()} source file."
+            description = f"{language.title()} file."
         else:
-            description = "Source file."
-        
-        if classes_added:
-            details.append(f"New classes: {', '.join(classes_added[:3])}")
-        if functions_added:
-            details.append(f"New functions: {', '.join(functions_added[:3])}")
+            description = "File."
+
+        # For Terraform files, show resources/modules added
+        if functions_added:  # In our code_analyzer, functions_added maps to resources
+            details.append(f"Resources: {', '.join(functions_added[:3])}")
+        if classes_added:  # In our code_analyzer, classes_added maps to modules
+            details.append(f"Modules: {', '.join(classes_added[:3])}")
     
     return status_label, description, details
 
@@ -404,100 +325,74 @@ def format_executive_summary(
     architecture_notes = []
     capabilities = []
     
-    # --- Detect PR Agent / AI Agent System ---
-    if ('pr-agent' in all_filenames_str or 'pragent' in all_filenames_str) and \
-       any('agent' in c.lower() for c in all_classes):
-        project_type = "PR Analysis Agent"
-        
-        # Check for Microsoft Agent Framework
-        has_maf = any('agent_framework' in (f.get('patch', '') or '').lower() for f in files) or \
-                  any('agentframework' in fn or 'agent_framework' in fn for fn in all_filenames)
-        
-        # Check for Azure OpenAI
-        has_azure_openai = any('openai' in (f.get('patch', '') or '').lower() for f in files) or \
-                          'azureopenai' in all_filenames_str or 'azure_openai' in all_filenames_str
-        
-        # Detect agent types
-        agent_classes = [c for c in all_classes if 'agent' in c.lower()]
-        executor_classes = [c for c in all_classes if 'executor' in c.lower() or 'dispatcher' in c.lower() or 'aggregator' in c.lower()]
-        
-        # Detect tools
-        tool_files = [f for f in files if '/tools/' in f.get('filename', '')]
-        tool_names = []
-        for tf in tool_files:
-            fn = tf.get('filename', '').split('/')[-1].replace('.py', '').replace('_', ' ').title()
-            if fn and fn not in ['__init__', 'Init']:
-                tool_names.append(fn)
-        
-        project_description = "This PR implements an **AI-powered Pull Request analysis agent** that automatically reviews code changes and provides intelligent feedback."
-        
-        if has_maf:
-            architecture_notes.append("Built on **Microsoft Agent Framework (MAF)** for enterprise-grade AI orchestration")
-        if has_azure_openai:
-            architecture_notes.append("Powered by **Azure OpenAI** (GPT-4) for intelligent code understanding")
-        if executor_classes:
-            if any('dispatcher' in c.lower() for c in executor_classes) and any('aggregator' in c.lower() for c in executor_classes):
-                architecture_notes.append("Uses **fan-out/fan-in workflow pattern** for parallel agent execution")
-        
-        # Capabilities based on detected components
-        if any('code' in c.lower() and 'analyz' in c.lower() for c in agent_classes + all_functions):
-            capabilities.append("Multi-language code analysis (Python, JavaScript, TypeScript, Bicep, Terraform, SQL, and more)")
-        if any('security' in c.lower() for c in agent_classes + all_functions):
-            capabilities.append("Security vulnerability scanning with severity classification")
-        if any('github' in fn for fn in all_filenames):
-            capabilities.append("GitHub API integration for PR comments and diff retrieval")
-        if any('markdown' in fn or 'formatter' in fn for fn in all_filenames):
-            capabilities.append("Rich markdown formatting for readable PR comments")
-    
-    # --- Detect Azure Infrastructure (Bicep) ---
-    elif any(f.get('language') == 'bicep' for f in files):
-        project_type = "Azure Infrastructure"
-        bicep_files = [f for f in files if f.get('language') == 'bicep']
-        
-        # Analyze infrastructure components
-        infra_components = []
-        for bf in bicep_files:
-            fn = bf.get('filename', '').lower()
-            patch = bf.get('patch', '').lower() if bf.get('patch') else ''
-            
-            if 'functionapp' in fn or 'function' in fn or 'microsoft.web/sites' in patch:
-                infra_components.append("Azure Function App")
-            if 'eventhub' in fn or 'event-hub' in fn or 'microsoft.eventhub' in patch:
-                infra_components.append("Event Hub")
-            if 'storage' in fn or 'microsoft.storage' in patch:
-                infra_components.append("Storage Account")
-            if 'vnet' in fn or 'network' in fn or 'microsoft.network' in patch:
-                infra_components.append("Virtual Network")
-            if 'keyvault' in fn or 'key-vault' in fn or 'microsoft.keyvault' in patch:
-                infra_components.append("Key Vault")
-            if 'apim' in fn or 'api-management' in fn or 'microsoft.apimanagement' in patch:
-                infra_components.append("API Management")
-            if 'cosmos' in fn or 'microsoft.documentdb' in patch:
-                infra_components.append("Cosmos DB")
-            if 'sql' in fn or 'microsoft.sql' in patch:
-                infra_components.append("Azure SQL")
-            if 'servicebus' in fn or 'microsoft.servicebus' in patch:
-                infra_components.append("Service Bus")
-            if 'privateendpoint' in fn or 'private-endpoint' in fn:
-                infra_components.append("Private Endpoints")
-        
-        infra_components = list(set(infra_components))  # Remove duplicates
-        
-        if infra_components:
-            project_description = f"This PR provisions/updates **Azure infrastructure** including: {', '.join(infra_components)}."
-        else:
-            project_description = f"This PR contains **Azure Bicep infrastructure-as-code** changes ({len(bicep_files)} files)."
-        
-        architecture_notes.append("Infrastructure-as-Code using **Azure Bicep** templates")
-        if any('module' in f.get('filename', '').lower() for f in bicep_files):
-            architecture_notes.append("Modular design with reusable Bicep modules")
-    
     # --- Detect Terraform Infrastructure ---
-    elif any(f.get('language') == 'terraform' for f in files):
+    if any(f.get('language') in ('terraform', 'terraform-vars', 'hcl') for f in files):
         project_type = "Terraform Infrastructure"
-        tf_files = [f for f in files if f.get('language') == 'terraform']
-        project_description = f"This PR contains **Terraform infrastructure-as-code** changes ({len(tf_files)} files)."
-        architecture_notes.append("Infrastructure-as-Code using **Terraform**")
+        tf_files = [f for f in files if f.get('language') in ('terraform', 'terraform-vars', 'hcl')]
+
+        # Detect cloud provider
+        cloud_providers = set()
+        infra_components = []
+
+        for tf in tf_files:
+            patch = tf.get('patch', '').lower() if tf.get('patch') else ''
+            fn = tf.get('filename', '').lower()
+
+            # AWS
+            if 'aws_' in patch or 'aws_' in fn:
+                cloud_providers.add("AWS")
+                if 'aws_instance' in patch or 'aws_ec2' in patch:
+                    infra_components.append("Compute (EC2)")
+                if 'aws_s3' in patch:
+                    infra_components.append("Storage (S3)")
+                if 'aws_rds' in patch or 'aws_db_instance' in patch:
+                    infra_components.append("Databases (RDS)")
+                if 'aws_vpc' in patch or 'aws_subnet' in patch or 'aws_security_group' in patch:
+                    infra_components.append("Networking (VPC)")
+                if 'aws_lambda' in patch:
+                    infra_components.append("Serverless (Lambda)")
+                if 'aws_iam' in patch:
+                    infra_components.append("Security (IAM)")
+
+            # Azure
+            if 'azurerm_' in patch or 'azurerm_' in fn:
+                cloud_providers.add("Azure")
+                if 'azurerm_virtual_machine' in patch or 'azurerm_linux_virtual_machine' in patch:
+                    infra_components.append("Compute (VMs)")
+                if 'azurerm_storage' in patch:
+                    infra_components.append("Storage (Blob)")
+                if 'azurerm_sql' in patch or 'azurerm_mssql' in patch:
+                    infra_components.append("Databases (SQL)")
+                if 'azurerm_virtual_network' in patch or 'azurerm_subnet' in patch:
+                    infra_components.append("Networking (VNet)")
+                if 'azurerm_function_app' in patch:
+                    infra_components.append("Serverless (Functions)")
+                if 'azurerm_key_vault' in patch:
+                    infra_components.append("Security (Key Vault)")
+
+            # GCP
+            if 'google_' in patch or 'google_' in fn:
+                cloud_providers.add("GCP")
+                if 'google_compute_instance' in patch:
+                    infra_components.append("Compute (GCE)")
+                if 'google_storage_bucket' in patch:
+                    infra_components.append("Storage (GCS)")
+                if 'google_sql_database_instance' in patch:
+                    infra_components.append("Databases (Cloud SQL)")
+                if 'google_compute_network' in patch or 'google_compute_subnetwork' in patch:
+                    infra_components.append("Networking (VPC)")
+
+        infra_components = list(set(infra_components))  # Remove duplicates
+        cloud_providers_str = ', '.join(sorted(cloud_providers)) if cloud_providers else "multi-cloud"
+
+        if infra_components:
+            project_description = f"This PR modifies **{cloud_providers_str} Terraform infrastructure** affecting: {', '.join(infra_components[:6])}."
+        else:
+            project_description = f"This PR contains **{cloud_providers_str} Terraform infrastructure-as-code** changes ({len(tf_files)} files)."
+
+        architecture_notes.append(f"Infrastructure-as-Code using **Terraform** for {cloud_providers_str}")
+        if any('module' in f.get('filename', '').lower() for f in tf_files):
+            architecture_notes.append("Modular design with reusable Terraform modules")
     
     # --- Detect GitHub Actions / CI-CD ---
     elif any('.github/workflows' in f.get('filename', '') for f in files):
@@ -699,19 +594,19 @@ def format_code_analysis(analysis_result: Dict) -> str:
     if by_category:
         md += "### Changes by Category\n\n"
         category_icons = {
-            'source-code': '💻',
-            'tests': '🧪',
-            'infrastructure': '🏗️',
-            'database': '🗃️',
-            'documentation': '📝',
-            'configuration': '⚙️',
-            'ci-cd': '🔄',
+            'terraform-resources': '🏗️',
+            'terraform-modules': '📦',
+            'terraform-variables': '⚙️',
+            'terraform-outputs': '📤',
+            'terraform-providers': '🔌',
+            'unknown': '📁',
         }
         md += "| Category | Files | Icon |\n"
         md += "|----------|-------|------|\n"
         for category, cat_files in by_category.items():
             icon = category_icons.get(category, '📁')
-            md += f"| {category.replace('-', ' ').title()} | {len(cat_files)} | {icon} |\n"
+            category_display = category.replace('terraform-', '').replace('-', ' ').title()
+            md += f"| {category_display} | {len(cat_files)} | {icon} |\n"
         md += "\n"
 
     # Changes by language

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-PR Agent is an AI-powered Pull Request analyzer that uses Microsoft Agent Framework with Azure OpenAI (GPT-4) to perform code analysis and security scanning. It posts formatted analysis results as PR comments.
+Terraform PR Analysis Agent is an AI-powered Pull Request analyzer specialized in Terraform infrastructure-as-code. It uses Microsoft Agent Framework with Azure OpenAI (GPT-4) to analyze Terraform changes, detect security misconfigurations, and identify breaking changes. It posts formatted analysis results as PR comments.
 
 ## Commands
 
@@ -82,6 +82,11 @@ Configured in `utils/observability.py`. Supports:
 - Azure Application Insights (production)
 - Local OTLP exporter (development)
 
-## Supported Languages
+## Supported Files
 
-Python, JavaScript, TypeScript, Java, C#, Go, Rust, SQL, Bicep, Terraform, YAML, and 15+ more (see `tools/code_analyzer.py` LANGUAGE_MAP).
+- **Terraform**: `.tf` (resource definitions, modules, providers)
+- **Terraform Variables**: `.tfvars` (variable values)
+- **HCL**: `.hcl` (HashiCorp Configuration Language)
+- **Workflows**: `.yml`/`.yaml` (GitHub Actions workflows)
+
+State files (`.tfstate`, `.tfstate.backup`) and lock files (`.terraform.lock.hcl`) are automatically ignored.
